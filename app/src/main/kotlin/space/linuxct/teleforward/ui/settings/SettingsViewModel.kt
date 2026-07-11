@@ -20,6 +20,8 @@ import space.linuxct.teleforward.data.telegram.PairingRepository
 import space.linuxct.teleforward.data.telegram.PairingResult
 import space.linuxct.teleforward.data.telegram.SendResult
 import space.linuxct.teleforward.data.telegram.TokenValidation
+import space.linuxct.teleforward.data.update.UpdateRepository
+import space.linuxct.teleforward.data.update.UpdateResult
 import space.linuxct.teleforward.util.NotificationAccess
 import javax.inject.Inject
 
@@ -32,6 +34,18 @@ sealed interface ActionState {
     data object Running : ActionState
     data class Success(val message: String) : ActionState
     data class Error(val message: String) : ActionState
+}
+
+/**
+ * State of the "Check for updates" action in the About card. Distinct from [ActionState] because it
+ * carries the resolved version / release URL used to render the result and the "Open release" button.
+ */
+sealed interface UpdateCheckState {
+    data object Idle : UpdateCheckState
+    data object Checking : UpdateCheckState
+    data class UpToDate(val current: String) : UpdateCheckState
+    data class Available(val latest: String, val url: String) : UpdateCheckState
+    data class Error(val message: String) : UpdateCheckState
 }
 
 /**
@@ -58,6 +72,8 @@ data class SettingsUiState(
     // Maintenance
     val listenerEnabled: Boolean = false,
     val maintenanceAction: ActionState = ActionState.Idle,
+    // About / update check
+    val updateState: UpdateCheckState = UpdateCheckState.Idle,
 ) {
     val paired: Boolean get() = chatId != null
 
@@ -88,6 +104,7 @@ class SettingsViewModel @Inject constructor(
     private val pairingRepository: PairingRepository,
     private val secretStore: SecretStore,
     private val outboxRepository: OutboxRepository,
+    private val updateRepository: UpdateRepository,
 ) : ViewModel() {
 
     private val _state = MutableStateFlow(SettingsUiState())
@@ -255,6 +272,23 @@ class SettingsViewModel @Inject constructor(
     /** Re-read notification-listener access (call on resume, e.g. returning from Settings). */
     fun refreshListenerHealth() {
         _state.update { it.copy(listenerEnabled = NotificationAccess.isEnabled(appContext)) }
+    }
+
+    // endregion
+
+    // region About / update check
+
+    /** Run an immediate GitHub update check and reflect the outcome inline in the About card. */
+    fun onCheckForUpdates() {
+        _state.update { it.copy(updateState = UpdateCheckState.Checking) }
+        viewModelScope.launch {
+            val next = when (val result = updateRepository.check()) {
+                is UpdateResult.UpToDate -> UpdateCheckState.UpToDate(result.current)
+                is UpdateResult.Available -> UpdateCheckState.Available(result.latest, result.releaseUrl)
+                is UpdateResult.Failed -> UpdateCheckState.Error(result.message)
+            }
+            _state.update { it.copy(updateState = next) }
+        }
     }
 
     // endregion

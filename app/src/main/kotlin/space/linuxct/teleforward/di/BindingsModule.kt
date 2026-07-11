@@ -26,6 +26,8 @@ import space.linuxct.teleforward.data.telegram.PairingRepository
 import space.linuxct.teleforward.data.telegram.PairingRepositoryImpl
 import space.linuxct.teleforward.data.telegram.TelegramSender
 import space.linuxct.teleforward.data.telegram.TelegramSenderImpl
+import space.linuxct.teleforward.data.update.UpdateRepository
+import space.linuxct.teleforward.data.update.UpdateRepositoryImpl
 import space.linuxct.teleforward.service.NotificationMapper
 import space.linuxct.teleforward.service.NotificationMapperImpl
 import javax.inject.Singleton
@@ -87,4 +89,8 @@ abstract class BindingsModule {
     @Binds
     @Singleton
     abstract fun bindNotificationMapper(impl: NotificationMapperImpl): NotificationMapper
+
+    @Binds
+    @Singleton
+    abstract fun bindUpdateRepository(impl: UpdateRepositoryImpl): UpdateRepository
 }

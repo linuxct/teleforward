@@ -52,6 +52,9 @@ class SettingsRepositoryImpl @Inject constructor(
     override val getUpdatesOffset: Flow<Long> =
         dataStore.data.map { it[SettingsKeys.GET_UPDATES_OFFSET] ?: SettingsKeys.Defaults.GET_UPDATES_OFFSET }
 
+    override val lastNotifiedUpdateVersion: Flow<String?> =
+        dataStore.data.map { it[SettingsKeys.LAST_NOTIFIED_UPDATE_VERSION] }
+
     override suspend fun setChatId(chatId: Long?) {
         dataStore.edit { prefs ->
             if (chatId == null) prefs.remove(SettingsKeys.CHAT_ID) else prefs[SettingsKeys.CHAT_ID] = chatId
@@ -96,6 +99,16 @@ class SettingsRepositoryImpl @Inject constructor(
 
     override suspend fun setGetUpdatesOffset(offset: Long) {
         dataStore.edit { prefs -> prefs[SettingsKeys.GET_UPDATES_OFFSET] = offset }
+    }
+
+    override suspend fun setLastNotifiedUpdateVersion(version: String?) {
+        dataStore.edit { prefs ->
+            if (version == null) {
+                prefs.remove(SettingsKeys.LAST_NOTIFIED_UPDATE_VERSION)
+            } else {
+                prefs[SettingsKeys.LAST_NOTIFIED_UPDATE_VERSION] = version
+            }
+        }
     }
 
     override suspend fun snapshot(): SettingsSnapshot {

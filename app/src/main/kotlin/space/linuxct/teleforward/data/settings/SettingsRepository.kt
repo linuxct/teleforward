@@ -61,6 +61,12 @@ interface SettingsRepository {
     /** getUpdates offset bookkeeping used during pairing. Default 0. */
     val getUpdatesOffset: Flow<Long>
 
+    /**
+     * Latest release version the update worker has already notified the user about. Null until the
+     * first update notification; used to avoid re-notifying for the same version every day.
+     */
+    val lastNotifiedUpdateVersion: Flow<String?>
+
     suspend fun setChatId(chatId: Long?)
 
     suspend fun setChatDisplayName(name: String?)
@@ -80,6 +86,8 @@ interface SettingsRepository {
     suspend fun setSkipOngoing(skip: Boolean)
 
     suspend fun setGetUpdatesOffset(offset: Long)
+
+    suspend fun setLastNotifiedUpdateVersion(version: String?)
 
     /** Synchronous-friendly one-shot read of every setting. */
     suspend fun snapshot(): SettingsSnapshot

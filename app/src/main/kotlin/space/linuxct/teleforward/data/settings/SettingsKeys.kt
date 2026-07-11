@@ -22,6 +22,7 @@ object SettingsKeys {
     val OUTBOX_EXPIRY_HOURS = intPreferencesKey("outbox_expiry_hours")
     val SKIP_ONGOING = booleanPreferencesKey("skip_ongoing")
     val GET_UPDATES_OFFSET = longPreferencesKey("get_updates_offset")
+    val LAST_NOTIFIED_UPDATE_VERSION = stringPreferencesKey("last_notified_update_version")
 
     object Defaults {
         const val FORWARDING_ENABLED = true

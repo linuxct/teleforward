@@ -60,6 +60,8 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import android.net.Uri
+import space.linuxct.teleforward.BuildConfig
 import space.linuxct.teleforward.designsystem.AppScaffold
 import space.linuxct.teleforward.designsystem.SectionHeader
 import space.linuxct.teleforward.util.NotificationAccess
@@ -110,6 +112,7 @@ fun SettingsRoute(onBack: () -> Unit) {
         onSetExpiryHours = viewModel::setOutboxExpiryHours,
         onClearDelivered = viewModel::clearDeliveredLog,
         onClearAll = viewModel::clearAllLog,
+        onCheckForUpdates = viewModel::onCheckForUpdates,
     )
 }
 
@@ -129,6 +132,7 @@ private fun SettingsScreen(
     onSetExpiryHours: (Int) -> Unit,
     onClearDelivered: () -> Unit,
     onClearAll: () -> Unit,
+    onCheckForUpdates: () -> Unit,
 ) {
     AppScaffold(title = "Settings", onBack = onBack) { padding ->
         Column(
@@ -166,6 +170,12 @@ private fun SettingsScreen(
                 state = state,
                 onClearDelivered = onClearDelivered,
                 onClearAll = onClearAll,
+            )
+
+            SectionHeader("About")
+            AboutCard(
+                state = state,
+                onCheckForUpdates = onCheckForUpdates,
             )
         }
     }
@@ -475,6 +485,102 @@ private fun MaintenanceCard(
                     TextButton(onClick = { confirmClearAll = false }) { Text("Cancel") }
                 },
             )
+        }
+    }
+}
+
+// endregion
+
+// region About
+
+@Composable
+private fun AboutCard(
+    state: SettingsUiState,
+    onCheckForUpdates: () -> Unit,
+) {
+    val context = LocalContext.current
+
+    SettingsCard {
+        Column {
+            Text("TeleForward", style = MaterialTheme.typography.bodyLarge)
+            Text(
+                text = "Version ${BuildConfig.VERSION_NAME}",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+
+        val checking = state.updateState is UpdateCheckState.Checking
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            FilledTonalButton(onClick = onCheckForUpdates, enabled = !checking) {
+                Icon(Icons.Filled.Refresh, contentDescription = null, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.width(8.dp))
+                Text("Check for updates")
+            }
+            if (checking) BusyIndicator()
+        }
+
+        when (val update = state.updateState) {
+            UpdateCheckState.Idle, UpdateCheckState.Checking -> Unit
+
+            is UpdateCheckState.UpToDate -> Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    Icons.Filled.CheckCircle,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(18.dp),
+                )
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    "You're on the latest version (${update.current}).",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.primary,
+                )
+            }
+
+            is UpdateCheckState.Available -> Column(
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        Icons.Filled.Info,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(18.dp),
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        "Version ${update.latest} is available.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.primary,
+                    )
+                }
+                Button(
+                    onClick = {
+                        context.launchSafely(Intent(Intent.ACTION_VIEW, Uri.parse(update.url)))
+                    },
+                ) {
+                    Text("Open release")
+                }
+            }
+
+            is UpdateCheckState.Error -> Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    Icons.Filled.Warning,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.size(18.dp),
+                )
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    "Update check failed: ${update.message}",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.error,
+                )
+            }
         }
     }
 }
