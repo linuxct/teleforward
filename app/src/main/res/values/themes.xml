@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!--
+      Base window theme. All in-app UI theming is handled by the Compose
+      MaterialExpressiveTheme (see designsystem/Theme.kt); this XML theme only
+      styles the window before Compose takes over (background + transparent
+      system bars for edge-to-edge). A values-night variant provides the dark
+      window background.
+    -->
+    <style name="Theme.TeleForward" parent="@android:style/Theme.Material.Light.NoActionBar">
+        <item name="android:windowBackground">@color/window_background</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+        <item name="android:windowLightStatusBar">true</item>
+    </style>
+</resources>

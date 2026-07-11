@@ -1,0 +1,60 @@
+# ─── Gradle ───────────────────────────────────────────────────────────────
+.gradle/
+build/
+# NB: gradle/wrapper/gradle-wrapper.jar, gradlew and gradlew.bat are committed on purpose.
+
+# ─── Build outputs ────────────────────────────────────────────────────────
+/build
+/app/build
+/app/release
+bin/
+gen/
+out/
+release/
+
+# ─── Android artifacts ────────────────────────────────────────────────────
+*.apk
+*.aab
+*.aar
+*.ap_
+*.dex
+*.class
+
+# ─── Native build ─────────────────────────────────────────────────────────
+.externalNativeBuild/
+.cxx/
+obj/
+.navigation/
+
+# ─── Kotlin ───────────────────────────────────────────────────────────────
+.kotlin/
+
+# ─── Local / machine-specific config (SDK path — may contain secrets) ─────
+local.properties
+
+# ─── Signing material (NEVER commit) ──────────────────────────────────────
+*.jks
+*.keystore
+keystore.properties
+signing.properties
+
+# ─── Secrets / environment ────────────────────────────────────────────────
+.env
+*.env
+secrets.properties
+
+# ─── IDE: Android Studio / IntelliJ ───────────────────────────────────────
+*.iml
+.idea/
+captures/
+.vscode/
+
+# ─── Logs / profiling / temp ──────────────────────────────────────────────
+*.log
+*.hprof
+
+# ─── OS / editor cruft ────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+*~
+*.swp
