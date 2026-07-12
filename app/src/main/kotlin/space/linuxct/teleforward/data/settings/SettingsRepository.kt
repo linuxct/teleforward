@@ -84,8 +84,8 @@ interface SettingsRepository {
 
     /**
      * Packages for which the "magic link" reconstruction is opted OUT. Stored as a disabled set so the
-     * default (empty) means every supported YouTube app is enabled. "Enabled for pkg" therefore means
-     * `pkg ∈ YouTube.PACKAGES && pkg ∉ magicLinkDisabledPackages`.
+     * default (empty) means every supported app is enabled. "Enabled for pkg" therefore means
+     * `magicLinkKind(pkg) != null && pkg ∉ magicLinkDisabledPackages`.
      */
     val magicLinkDisabledPackages: Flow<Set<String>>
 

@@ -173,9 +173,9 @@ private fun MagicLinkCard(
                     style = MaterialTheme.typography.titleMedium,
                 )
                 Text(
-                    text = "Best-effort: rebuilds a new video's link from the channel + title via " +
-                        "YouTube's public feed. Heuristic — it won't always work, and only applies " +
-                        "to new-video notifications.",
+                    text = "Best-effort: reconstructs the link this notification points to from the " +
+                        "details it exposes and appends it to the forwarded message. Heuristic — it " +
+                        "won't always find a match.",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(top = 4.dp),

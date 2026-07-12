@@ -20,6 +20,7 @@ import space.linuxct.teleforward.data.link.LinkResolver
 import space.linuxct.teleforward.data.link.MagicLinkOutcome
 import space.linuxct.teleforward.data.link.MagicLinkResult
 import space.linuxct.teleforward.data.link.YouTube
+import space.linuxct.teleforward.data.link.magicLinkKind
 import space.linuxct.teleforward.data.repo.OutboxRepository
 import space.linuxct.teleforward.data.settings.SettingsRepository
 import space.linuxct.teleforward.data.telegram.MessageBuilder
@@ -212,16 +213,16 @@ class DeliveryWorker @AssistedInject constructor(
     }
 
     /**
-     * Append a `magicLinkTrace` diagnostics record for a YouTube item so a missing `Link:` line can
-     * be explained and feed staleness measured (`feedNewestPublished` vs the notification `postTime`).
-     * Gated on diagnostics being enabled AND the item being a supported YouTube package. Entirely
-     * best-effort: wrapped so it can NEVER throw into (or otherwise affect) the send path, and it uses
-     * only public APIs so it works in RELEASE builds.
+     * Append a `magicLinkTrace` diagnostics record for a supported magic-link item so a missing
+     * `Link:` line can be explained (YouTube feed staleness `feedNewestPublished` vs `postTime`, or
+     * the Apple Music track+artist that failed to match). Gated on diagnostics being enabled AND the
+     * item being a supported package. Entirely best-effort: wrapped so it can NEVER throw into (or
+     * otherwise affect) the send path, and it uses only public APIs so it works in RELEASE builds.
      */
     private suspend fun logMagicLinkTrace(row: OutboxEntity, resolution: MagicLinkResult) {
         runCatching {
             if (!settings.diagnosticsEnabled.first()) return
-            if (row.packageName !in YouTube.PACKAGES) return
+            if (magicLinkKind(row.packageName) == null) return
             val t = resolution.trace
             val json = JSONObject().apply {
                 put("kind", "magicLinkTrace")
@@ -230,6 +231,7 @@ class DeliveryWorker @AssistedInject constructor(
                 put("packageName", row.packageName)
                 put("postTime", row.postTime)
                 put("outcome", t.outcome.name)
+                putOpt("service", t.service)
                 putOpt("channelId", t.channelId)
                 putOpt("videoTitle", t.videoTitle)
                 putOpt("feedEntryCount", t.feedEntryCount)
@@ -245,6 +247,11 @@ class DeliveryWorker @AssistedInject constructor(
                 put("searchAttempted", t.searchAttempted)
                 putOpt("searchResultCount", t.searchResultCount)
                 putOpt("searchChannelMatched", t.searchChannelMatched)
+                putOpt("mediaTrack", t.mediaTrack)
+                putOpt("mediaArtist", t.mediaArtist)
+                putOpt("storefront", t.storefront)
+                putOpt("matchedTrack", t.matchedTrack)
+                putOpt("matchedArtist", t.matchedArtist)
             }
             diagStore.append(ForensicRecord(json.toString()))
         }

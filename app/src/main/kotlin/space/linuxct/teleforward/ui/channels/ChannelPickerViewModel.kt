@@ -11,7 +11,7 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
-import space.linuxct.teleforward.data.link.YouTube
+import space.linuxct.teleforward.data.link.magicLinkKind
 import space.linuxct.teleforward.data.repo.AppCatalogRepository
 import space.linuxct.teleforward.data.repo.RulesRepository
 import space.linuxct.teleforward.data.repo.SeenConversationRepository
@@ -52,7 +52,7 @@ data class ChannelPickerUiState(
     val wholeAppEnabled: Boolean = false,
     val channels: List<ChannelRowUi> = emptyList(),
     val conversations: List<ConversationRowUi> = emptyList(),
-    /** True only for supported YouTube apps: gates the magic-link reconstruction card. */
+    /** True only for supported apps: gates the magic-link reconstruction card. */
     val magicLinkSupported: Boolean = false,
     /** Magic-link toggle state (default ON for supported apps until explicitly opted out). */
     val magicLinkEnabled: Boolean = true,
@@ -186,7 +186,7 @@ class ChannelPickerViewModel @Inject constructor(
             wholeAppEnabled = wholeAppEnabled,
             channels = channelRows,
             conversations = conversationRows,
-            magicLinkSupported = packageName in YouTube.PACKAGES,
+            magicLinkSupported = magicLinkKind(packageName) != null,
             magicLinkEnabled = packageName !in magicLinkDisabled,
         )
     }

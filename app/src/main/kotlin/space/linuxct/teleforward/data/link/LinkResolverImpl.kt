@@ -8,6 +8,7 @@ import org.w3c.dom.Element
 import space.linuxct.teleforward.data.db.entity.OutboxEntity
 import java.io.ByteArrayInputStream
 import java.net.URLEncoder
+import java.util.Locale
 import java.util.concurrent.TimeUnit
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -27,8 +28,10 @@ data class VideoEntry(val videoId: String, val title: String, val published: Str
 data class SearchVideo(val videoId: String, val title: String, val channelId: String?)
 
 /**
- * YouTube-only [LinkResolver]. Reconstructs a video url from the channel id + video title via the
- * public uploads feed.
+ * The [LinkResolver] implementation. Dispatches by package ([magicLinkKind]): YouTube upload
+ * notifications reconstruct a `watch?v=` url from the channel id + title (this file's bulk), and
+ * Apple Music now-playing notifications reconstruct a `music.apple.com` song url from the track +
+ * artist via the iTunes Search API (see [reconstructAppleMusic] + [AppleMusic]).
  *
  * There is deliberately NO in-app feed cache: YouTube serves `videos.xml` from a URL-keyed CDN cache
  * that lags ~1h, so a just-published video (the one the notification is about) is absent from the
@@ -63,15 +66,24 @@ class LinkResolverImpl @Inject constructor() : LinkResolver {
         data class Error(val httpStatus: Int?, val error: String?) : FeedFetch
     }
 
+    /** Outcome of a single raw-body GET (the iTunes Search API): the body, or an error. */
+    private sealed interface BodyFetch {
+        data class Success(val body: String) : BodyFetch
+        data class Error(val httpStatus: Int?, val error: String?) : BodyFetch
+    }
+
     override suspend fun resolve(item: OutboxEntity, disabledPackages: Set<String>): MagicLinkResult = try {
+        val kind = magicLinkKind(item.packageName)
         when {
-            item.packageName !in YouTube.PACKAGES ->
-                MagicLinkResult(null, MagicLinkTrace(MagicLinkOutcome.SKIPPED_NOT_YOUTUBE))
+            kind == null ->
+                MagicLinkResult(null, MagicLinkTrace(MagicLinkOutcome.SKIPPED_UNSUPPORTED))
 
             item.packageName in disabledPackages ->
                 MagicLinkResult(null, MagicLinkTrace(MagicLinkOutcome.SKIPPED_DISABLED))
 
-            else -> reconstruct(item)
+            kind == MagicLinkKind.YOUTUBE -> reconstruct(item)
+
+            else -> reconstructAppleMusic(item)
         }
     } catch (t: Throwable) {
         // Absolutely never let magic-link resolution surface an error into the send path.
@@ -134,6 +146,77 @@ class LinkResolverImpl @Inject constructor() : LinkResolver {
         }
 
         return fetchAndMatch(channelId, title)
+    }
+
+    /**
+     * Apple Music reconstruction: from the now-playing track ([OutboxEntity.title]) + artist
+     * ([OutboxEntity.body]), query Apple's public iTunes Search API and, on a confident track+artist
+     * match, return the canonical `music.apple.com` song url. Never emits a wrong-song link — a miss
+     * yields NO_MATCH (no `Link:` line). One cheap JSON GET; not lagged like YouTube's feed, so there
+     * is no search fallback and no edit-after-send retry.
+     */
+    private fun reconstructAppleMusic(item: OutboxEntity): MagicLinkResult {
+        val track = item.title?.trim()
+        val artist = item.body?.trim()
+        if (track.isNullOrBlank() || artist.isNullOrBlank()) {
+            return MagicLinkResult(
+                null,
+                MagicLinkTrace(
+                    outcome = MagicLinkOutcome.NO_TITLE,
+                    service = AppleMusic.SERVICE,
+                    mediaTrack = track?.takeUnless { it.isBlank() },
+                    mediaArtist = artist?.takeUnless { it.isBlank() },
+                ),
+            )
+        }
+
+        val storefront = AppleMusic.storefront(Locale.getDefault().country)
+        return when (val fetch = fetchBody(AppleMusic.searchUrl(artist, track, storefront))) {
+            is BodyFetch.Error -> MagicLinkResult(
+                null,
+                MagicLinkTrace(
+                    outcome = MagicLinkOutcome.FEED_ERROR,
+                    service = AppleMusic.SERVICE,
+                    mediaTrack = track,
+                    mediaArtist = artist,
+                    storefront = storefront,
+                    httpStatus = fetch.httpStatus,
+                    error = fetch.error,
+                ),
+            )
+
+            is BodyFetch.Success -> {
+                val tracks = AppleMusic.parseTracks(fetch.body)
+                val match = AppleMusic.pickTrack(tracks, artist, track)
+                if (match != null) {
+                    MagicLinkResult(
+                        match.url,
+                        MagicLinkTrace(
+                            outcome = MagicLinkOutcome.MATCHED,
+                            service = AppleMusic.SERVICE,
+                            mediaTrack = track,
+                            mediaArtist = artist,
+                            storefront = storefront,
+                            url = match.url,
+                            matchedTrack = match.track,
+                            matchedArtist = match.artist,
+                        ),
+                    )
+                } else {
+                    MagicLinkResult(
+                        null,
+                        MagicLinkTrace(
+                            outcome = MagicLinkOutcome.NO_MATCH,
+                            service = AppleMusic.SERVICE,
+                            mediaTrack = track,
+                            mediaArtist = artist,
+                            storefront = storefront,
+                            error = "no confident match among ${tracks.size} results",
+                        ),
+                    )
+                }
+            }
+        }
     }
 
     /**
@@ -369,6 +452,25 @@ class LinkResolverImpl @Inject constructor() : LinkResolver {
         val normWanted = normalize(wanted)
         if (normWanted.isEmpty()) return null
         return channelMatched.firstOrNull { normalize(it.title) == normWanted }?.videoId
+    }
+
+    /** A single GET returning the raw response body (used for the iTunes Search API JSON). */
+    private fun fetchBody(url: String): BodyFetch = try {
+        val request = Request.Builder()
+            .url(url)
+            .header("User-Agent", USER_AGENT)
+            .header("Accept", "application/json")
+            .get()
+            .build()
+        http.newCall(request).execute().use { response ->
+            when {
+                !response.isSuccessful -> BodyFetch.Error(httpStatus = response.code, error = null)
+                else -> response.body?.string()?.let { BodyFetch.Success(it) }
+                    ?: BodyFetch.Error(httpStatus = response.code, error = "empty body")
+            }
+        }
+    } catch (t: Throwable) {
+        BodyFetch.Error(httpStatus = null, error = t.message ?: t.javaClass.simpleName)
     }
 
     /** One fresh, cache-busted network GET of the uploads feed for [channelId]. */

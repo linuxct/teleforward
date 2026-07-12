@@ -5,18 +5,23 @@ import space.linuxct.teleforward.data.db.entity.OutboxEntity
 /**
  * Best-effort reconstruction of a "magic link" for an outbox item just before it is sent.
  *
- * Currently only YouTube subscription-upload notifications are supported: given the channel id
- * (extracted from the notification into [OutboxEntity.youtubeChannelId]) and the video title (the
- * notification body), the resolver fetches YouTube's public uploads feed and maps the two to the
- * video's `watch?v=` url. Everything is best-effort — any failure/timeout yields a null url, and the
- * item is forwarded normally without a `Link:` line.
+ * Two services are supported (see [magicLinkKind]):
+ *  - **YouTube** subscription-upload notifications: given the channel id (extracted into
+ *    [OutboxEntity.youtubeChannelId]) and the video title (the body), fetch YouTube's uploads feed /
+ *    search and map to the video's `watch?v=` url.
+ *  - **Apple Music** now-playing notifications: given the track ([OutboxEntity.title]) and artist
+ *    ([OutboxEntity.body]), look them up via Apple's public iTunes Search API and map to the
+ *    `music.apple.com` song url.
+ *
+ * Everything is best-effort — any failure/timeout yields a null url, and the item is forwarded
+ * normally without a `Link:` line.
  */
 interface LinkResolver {
 
     /**
      * Attempt to reconstruct a link for [item]. Never throws: returns a [MagicLinkResult] whose
-     * [MagicLinkResult.url] is null when the package is not a supported YouTube app, magic-link is
-     * disabled for it ([disabledPackages]), or the video cannot be confidently reconstructed. The
+     * [MagicLinkResult.url] is null when the package is not a supported magic-link app, magic-link is
+     * disabled for it ([disabledPackages]), or the item cannot be confidently reconstructed. The
      * accompanying [MagicLinkResult.trace] always explains why (and, on success, how).
      */
     suspend fun resolve(item: OutboxEntity, disabledPackages: Set<String>): MagicLinkResult
@@ -32,25 +37,25 @@ interface LinkResolver {
 
 /** Why a magic-link resolution ended the way it did — one terminal outcome per [MagicLinkTrace]. */
 enum class MagicLinkOutcome {
-    /** Package isn't one of the supported YouTube apps; resolution was never attempted. */
-    SKIPPED_NOT_YOUTUBE,
+    /** Package isn't one of the supported magic-link apps; resolution was never attempted. */
+    SKIPPED_UNSUPPORTED,
 
     /** Magic-link reconstruction is opted out for this package. */
     SKIPPED_DISABLED,
 
-    /** No usable `UC…` channel id was present on the item. */
+    /** No usable `UC…` channel id was present on the item (YouTube only). */
     NO_CHANNEL_ID,
 
-    /** No usable video title (the notification body) was present. */
+    /** No usable query text was present — the video title, or the Apple Music track/artist. */
     NO_TITLE,
 
-    /** The uploads feed could not be fetched/parsed (see `httpStatus` / `error`). */
+    /** The upstream source (uploads feed / iTunes Search API) could not be fetched/parsed. */
     FEED_ERROR,
 
-    /** The feed was fetched but no entry title matched the video title. */
+    /** The source was fetched but nothing matched confidently (title / track+artist). */
     NO_MATCH,
 
-    /** A confident title match produced a `watch?v=` url (see `videoId` / `url`). */
+    /** A confident match produced a url (`watch?v=` / `music.apple.com`; see `url`). */
     MATCHED,
 }
 
@@ -82,6 +87,19 @@ data class MagicLinkTrace(
     val searchResultCount: Int? = null,
     /** How many of those search results belonged to the target channel id. */
     val searchChannelMatched: Int? = null,
+
+    /** Which service produced this trace: `"youtube"` or `"appleMusic"`; null on a bare skip. */
+    val service: String? = null,
+    // --- Apple Music ---
+    /** The now-playing track title queried against the iTunes Search API. */
+    val mediaTrack: String? = null,
+    /** The now-playing artist queried. */
+    val mediaArtist: String? = null,
+    /** The iTunes storefront (2-letter country) the lookup used. */
+    val storefront: String? = null,
+    /** The matched result's track / artist (confidence audit); null unless MATCHED. */
+    val matchedTrack: String? = null,
+    val matchedArtist: String? = null,
 )
 
 /** The resolved url (null when none) plus the [trace] describing how it was reached. */
