@@ -29,7 +29,7 @@ import kotlin.coroutines.cancellation.CancellationException
 
 /**
  * The background half of the magic-link feature: an edit-after-send fallback. When
- * [DeliveryWorker]'s first (synchronous, ~8s-bounded) resolve attempt missed, the item was still
+ * [DeliveryWorker]'s first (synchronous, ~12s-bounded) resolve attempt missed, the item was still
  * forwarded immediately WITHOUT a link and a [PendingLinkResolutionEntity] persisted. This worker
  * re-resolves the video from the persisted (channelId, title) — a fresh cache-busted fetch — and,
  * on a confident match, EDITs the already-sent Telegram message to append a `Link:` line.
@@ -180,6 +180,10 @@ class LinkResolveRetryWorker @AssistedInject constructor(
                 putOpt("error", t.error)
                 putOpt("videoId", t.videoId)
                 putOpt("url", t.url)
+                putOpt("source", t.source)
+                put("searchAttempted", t.searchAttempted)
+                putOpt("searchResultCount", t.searchResultCount)
+                putOpt("searchChannelMatched", t.searchChannelMatched)
                 putOpt("editResult", editResult?.let { editResultLabel(it) })
                 put("rowAction", rowAction)
             }
@@ -202,11 +206,15 @@ class LinkResolveRetryWorker @AssistedInject constructor(
         /** First background retry fires ~45s after the missed first attempt. */
         const val FIRST_DELAY_MS = 45_000L
 
-        /** Whole-effort window: a row older than this is abandoned regardless of attempts (~30 min). */
-        const val MAX_WINDOW_MS = 30L * 60L * 1000L
+        /**
+         * Whole-effort window: a row older than this is abandoned regardless of attempts (~60 min).
+         * Widened from 30 min because a high-volume channel where BOTH the `videos.xml` feed AND
+         * search results lag still needs to be caught once one source finally catches up.
+         */
+        const val MAX_WINDOW_MS = 60L * 60L * 1000L
 
         /** Max resolve attempts before giving up on a row. */
-        const val MAX_ATTEMPTS = 5
+        const val MAX_ATTEMPTS = 7
 
         private const val MILLIS_PER_SECOND = 1000L
 
@@ -222,7 +230,9 @@ class LinkResolveRetryWorker @AssistedInject constructor(
 
         /**
          * Backoff between resolve attempts, indexed by the upcoming attempt number (1-based): roughly
-         * +2m, +5m, +10m, +20m. Attempt 0's delay is [FIRST_DELAY_MS], applied at insert time.
+         * +2m, +5m, +10m, +20m, +30m, +45m. Attempt 0's delay is [FIRST_DELAY_MS] (~45s), applied at
+         * insert time. The longer tail (paired with the widened [MAX_WINDOW_MS]) keeps retrying a
+         * channel where both the feed and search results lag until one of them catches up.
          */
         private val BACKOFF_MS = longArrayOf(
             FIRST_DELAY_MS, // index 0 — unused at runtime (first delay set on insert)
@@ -230,6 +240,8 @@ class LinkResolveRetryWorker @AssistedInject constructor(
             5L * 60L * 1000L, // attempt 2
             10L * 60L * 1000L, // attempt 3
             20L * 60L * 1000L, // attempt 4
+            30L * 60L * 1000L, // attempt 5
+            45L * 60L * 1000L, // attempt 6
         )
 
         /** Delay before the [attempt]-th resolve retry (clamped into the [BACKOFF_MS] table). */

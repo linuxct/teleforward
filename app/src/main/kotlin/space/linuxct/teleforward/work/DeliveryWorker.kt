@@ -102,7 +102,7 @@ class DeliveryWorker @AssistedInject constructor(
             try {
                 outboxRepository.markSending(id)
                 // Best-effort "magic link" reconstruction, fully isolated from the send outcome:
-                // bounded by an 8s timeout and try/caught, so a failure/timeout only means no Link:
+                // bounded by a 12s timeout and try/caught, so a failure/timeout only means no Link:
                 // line — it never throws, retries, or fails the item.
                 val resolution = withTimeoutOrNull(LINK_RESOLVE_TIMEOUT_MS) {
                     runCatching {
@@ -241,6 +241,10 @@ class DeliveryWorker @AssistedInject constructor(
                 putOpt("videoId", t.videoId)
                 putOpt("url", t.url)
                 put("cacheBusted", t.cacheBusted)
+                putOpt("source", t.source)
+                put("searchAttempted", t.searchAttempted)
+                putOpt("searchResultCount", t.searchResultCount)
+                putOpt("searchChannelMatched", t.searchChannelMatched)
             }
             diagStore.append(ForensicRecord(json.toString()))
         }
@@ -277,8 +281,11 @@ class DeliveryWorker @AssistedInject constructor(
         private const val MILLIS_PER_SECOND = 1000L
         private const val MILLIS_PER_HOUR = 60L * 60L * 1000L
 
-        /** Upper bound on best-effort magic-link resolution; expiry here just means "no Link: line". */
-        private const val LINK_RESOLVE_TIMEOUT_MS = 8_000L
+        /**
+         * Upper bound on best-effort magic-link resolution (RSS feed + a ~1MB search-page fallback
+         * fetch); expiry here just means "no Link: line" and never delays the forward beyond this.
+         */
+        private const val LINK_RESOLVE_TIMEOUT_MS = 12_000L
 
         private const val NO_RECIPIENT_ERROR = "no recipient paired"
     }

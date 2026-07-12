@@ -58,16 +58,19 @@ class LinkResolveRetryWorkerTest {
 
     @Test
     fun backoffIsMonotonicallyIncreasingThenClamped() {
-        val one = LinkResolveRetryWorker.backoffMillis(1)
-        val two = LinkResolveRetryWorker.backoffMillis(2)
-        val three = LinkResolveRetryWorker.backoffMillis(3)
-        val four = LinkResolveRetryWorker.backoffMillis(4)
-        assertTrue(one < two)
-        assertTrue(two < three)
-        assertTrue(three < four)
-        // Attempt 1's step is ~2 minutes; past the table it clamps to the last (attempt-4) step.
-        assertEquals(2L * 60L * 1000L, one)
-        assertEquals(four, LinkResolveRetryWorker.backoffMillis(5))
-        assertEquals(four, LinkResolveRetryWorker.backoffMillis(99))
+        // Runtime backoff covers attempts 1..(MAX_ATTEMPTS-1); each step is strictly larger.
+        val lastAttempt = LinkResolveRetryWorker.MAX_ATTEMPTS - 1
+        for (a in 2..lastAttempt) {
+            assertTrue(
+                "attempt $a should back off longer than ${a - 1}",
+                LinkResolveRetryWorker.backoffMillis(a - 1) < LinkResolveRetryWorker.backoffMillis(a),
+            )
+        }
+        // Attempt 1's step is ~2 minutes; past the table it clamps to the last step (~45m).
+        assertEquals(2L * 60L * 1000L, LinkResolveRetryWorker.backoffMillis(1))
+        val last = LinkResolveRetryWorker.backoffMillis(lastAttempt)
+        assertEquals(45L * 60L * 1000L, last)
+        assertEquals(last, LinkResolveRetryWorker.backoffMillis(lastAttempt + 1))
+        assertEquals(last, LinkResolveRetryWorker.backoffMillis(99))
     }
 }

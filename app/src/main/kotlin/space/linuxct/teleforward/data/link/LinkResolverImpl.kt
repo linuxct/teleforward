@@ -2,9 +2,12 @@ package space.linuxct.teleforward.data.link
 
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import org.json.JSONArray
+import org.json.JSONObject
 import org.w3c.dom.Element
 import space.linuxct.teleforward.data.db.entity.OutboxEntity
 import java.io.ByteArrayInputStream
+import java.net.URLEncoder
 import java.util.concurrent.TimeUnit
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -17,6 +20,13 @@ import javax.xml.parsers.DocumentBuilderFactory
 data class VideoEntry(val videoId: String, val title: String, val published: String? = null)
 
 /**
+ * A single video parsed from a YouTube search results page's `ytInitialData`: the video id, its
+ * title, and the uploader's channel id ([channelId], null when the byline carried no `UC…`
+ * browseId). Used by the search fallback to pick the channel-scoped, title-matched result.
+ */
+data class SearchVideo(val videoId: String, val title: String, val channelId: String?)
+
+/**
  * YouTube-only [LinkResolver]. Reconstructs a video url from the channel id + video title via the
  * public uploads feed.
  *
@@ -25,6 +35,11 @@ data class VideoEntry(val videoId: String, val title: String, val published: Str
  * plain URL. Appending a unique `nocache=` query param busts that CDN cache and returns the fresh
  * feed (a `Cache-Control: no-cache` header alone is ignored by the CDN). Every fetch is therefore a
  * fresh, cache-busted network GET — an in-memory cache would just reintroduce the staleness we fix.
+ *
+ * Even cache-busted, the `videos.xml` CONTENT itself lags ~25–30 min for high-volume channels, so a
+ * just-published video can still be absent from the feed. When the (authoritative, cheap) RSS attempt
+ * finds no title match, we fall back to scraping YouTube's search results page — which surfaces the
+ * new video within minutes — and pick the result whose uploader channel id AND title both match.
  *
  * Every step is wrapped so a network/parse failure can only ever produce a null url — it never
  * throws into the delivery worker.
@@ -122,12 +137,18 @@ class LinkResolverImpl @Inject constructor() : LinkResolver {
     }
 
     /**
-     * Shared tail of both resolution paths: one fresh cache-busted feed fetch for [channelId], then a
-     * confident title match against [title] (both are already validated by the caller). Returns a
-     * FEED_ERROR result on fetch failure, otherwise MATCHED / NO_MATCH via [resultFromEntries].
+     * Shared tail of both resolution paths: try the authoritative RSS attempt first (one fresh
+     * cache-busted feed fetch for [channelId] + confident title match against [title]); on an RSS miss
+     * (NO_MATCH or FEED_ERROR) fall back to the YouTube-search scrape, which surfaces just-published
+     * videos the lagging feed hasn't caught up to yet. [channelId]/[title] are validated by the caller.
+     *
+     * - RSS match → MATCHED, `source = "rss"`.
+     * - RSS miss, search match → MATCHED, `source = "search"` (feed metadata from the RSS attempt is
+     *   preserved in the trace, so it still shows the feed had entries but none matched).
+     * - Both miss → the RSS miss trace, annotated with the search diagnostics (attempted / counts).
      */
-    private fun fetchAndMatch(channelId: String, title: String): MagicLinkResult =
-        when (val fetch = fetchFeed(channelId)) {
+    private fun fetchAndMatch(channelId: String, title: String): MagicLinkResult {
+        val rss = when (val fetch = fetchFeed(channelId)) {
             is FeedFetch.Error -> MagicLinkResult(
                 null,
                 MagicLinkTrace(
@@ -142,6 +163,213 @@ class LinkResolverImpl @Inject constructor() : LinkResolver {
 
             is FeedFetch.Success -> resultFromEntries(channelId, title, fetch.entries)
         }
+
+        // RSS is authoritative: a confident feed match wins and short-circuits the search.
+        if (rss.url != null) {
+            return rss.copy(trace = rss.trace.copy(source = SOURCE_RSS))
+        }
+
+        // RSS missed — try the search fallback (best-effort; never throws).
+        val search = searchVideoId(channelId, title)
+        if (search.videoId != null) {
+            val url = watchUrl(search.videoId)
+            return MagicLinkResult(
+                url,
+                rss.trace.copy(
+                    outcome = MagicLinkOutcome.MATCHED,
+                    videoId = search.videoId,
+                    url = url,
+                    source = SOURCE_SEARCH,
+                    searchAttempted = true,
+                    searchResultCount = search.resultCount,
+                    searchChannelMatched = search.channelMatched,
+                ),
+            )
+        }
+
+        // Both sources missed: keep the RSS miss trace, annotate why the search missed too.
+        return MagicLinkResult(
+            null,
+            rss.trace.copy(
+                source = null,
+                searchAttempted = true,
+                searchResultCount = search.resultCount,
+                searchChannelMatched = search.channelMatched,
+            ),
+        )
+    }
+
+    /** Outcome of the search fallback: the picked (channel+title matched) video id plus diagnostics. */
+    private data class SearchResult(
+        val videoId: String?,
+        val resultCount: Int?,
+        val channelMatched: Int?,
+    )
+
+    /**
+     * The YouTube-search fallback: GET the desktop results page for [title], extract `ytInitialData`,
+     * and pick the video whose uploader channel id == [channelId] AND whose title matches [title].
+     * Entirely try/caught → a network/parse failure yields a null videoId (never throws). The returned
+     * [SearchResult] also carries diagnostics for the trace (result count, channel-matched count).
+     *
+     * A desktop browser User-Agent + `Cookie: SOCS=CAISAiAD` are sent so YouTube serves the real
+     * results page rather than the EU-consent interstitial (which carries no `ytInitialData`).
+     */
+    private fun searchVideoId(channelId: String, title: String): SearchResult = try {
+        val request = Request.Builder()
+            .url(searchUrl(title))
+            .header("User-Agent", DESKTOP_USER_AGENT)
+            .header("Cookie", CONSENT_COOKIE)
+            .header("Accept-Language", "en-US,en;q=0.9")
+            .get()
+            .build()
+        val html = http.newCall(request).execute().use { response ->
+            if (!response.isSuccessful) null else response.body?.string()
+        }
+        when {
+            html == null -> SearchResult(videoId = null, resultCount = null, channelMatched = null)
+            else -> {
+                val json = extractYtInitialData(html)
+                if (json == null) {
+                    // Consent / unexpected page: no results parsed.
+                    SearchResult(videoId = null, resultCount = 0, channelMatched = 0)
+                } else {
+                    val videos = parseSearchVideos(json)
+                    SearchResult(
+                        videoId = pickVideoId(videos, channelId, title),
+                        resultCount = videos.size,
+                        channelMatched = videos.count { it.channelId == channelId },
+                    )
+                }
+            }
+        }
+    } catch (t: Throwable) {
+        SearchResult(videoId = null, resultCount = null, channelMatched = null)
+    }
+
+    /** The desktop search-results URL for [title] (English/US locale). Pure/unit-testable. */
+    fun searchUrl(title: String): String =
+        "$SEARCH_BASE?search_query=${URLEncoder.encode(title, "UTF-8")}&hl=en&gl=US"
+
+    /**
+     * Extract the `ytInitialData` JSON object from a YouTube results page's HTML: locate the
+     * `ytInitialData =` assignment (fallback marker `"ytInitialData":`), then balance braces from the
+     * first `{` (respecting string literals + escapes) to isolate the JSON substring. Returns null when
+     * the marker is absent (e.g. a consent page). Pure and unit-testable.
+     */
+    fun extractYtInitialData(html: String): String? {
+        var marker = html.indexOf("ytInitialData =")
+        if (marker < 0) marker = html.indexOf("\"ytInitialData\":")
+        if (marker < 0) return null
+        val start = html.indexOf('{', marker)
+        if (start < 0) return null
+        return balancedJson(html, start)
+    }
+
+    /** Return the substring of [text] from the `{` at [start] to its matching `}`, or null if unbalanced. */
+    private fun balancedJson(text: String, start: Int): String? {
+        var depth = 0
+        var inString = false
+        var escaped = false
+        var i = start
+        while (i < text.length) {
+            val c = text[i]
+            if (inString) {
+                when {
+                    escaped -> escaped = false
+                    c == '\\' -> escaped = true
+                    c == '"' -> inString = false
+                }
+            } else {
+                when (c) {
+                    '"' -> inString = true
+                    '{' -> depth++
+                    '}' -> {
+                        depth--
+                        if (depth == 0) return text.substring(start, i + 1)
+                    }
+                }
+            }
+            i++
+        }
+        return null
+    }
+
+    /**
+     * Pure: recursively walk a `ytInitialData`-shaped [json] object collecting every node that carries
+     * an 11-char `videoId` AND a `title` (`title.runs[0].text` or `title.simpleText`), tagging each
+     * with the uploader channel id (first `UC…` `browseId` under `ownerText` / `longBylineText` /
+     * `shortBylineText`). Unit-testable without the network. Any parse failure yields an empty list.
+     */
+    fun parseSearchVideos(json: String): List<SearchVideo> = try {
+        val out = ArrayList<SearchVideo>()
+        collectSearchVideos(JSONObject(json), out)
+        out
+    } catch (t: Throwable) {
+        emptyList()
+    }
+
+    /** DFS over a parsed JSON tree, appending every video-renderer-shaped node to [out]. */
+    private fun collectSearchVideos(node: Any?, out: MutableList<SearchVideo>) {
+        when (node) {
+            is JSONObject -> {
+                val videoId = (node.opt("videoId") as? String)?.takeIf { it.length == VIDEO_ID_LENGTH }
+                if (videoId != null) {
+                    val title = searchNodeTitle(node)
+                    if (title != null) out += SearchVideo(videoId, title, searchNodeChannelId(node))
+                }
+                val keys = node.keys()
+                while (keys.hasNext()) collectSearchVideos(node.opt(keys.next()), out)
+            }
+
+            is JSONArray -> {
+                for (i in 0 until node.length()) collectSearchVideos(node.opt(i), out)
+            }
+        }
+    }
+
+    /** The renderer node's title text: `title.runs[0].text`, else `title.simpleText`, else null. */
+    private fun searchNodeTitle(node: JSONObject): String? {
+        val titleObj = node.optJSONObject("title") ?: return null
+        titleObj.optJSONArray("runs")
+            ?.optJSONObject(0)
+            ?.optString("text")
+            ?.takeUnless { it.isEmpty() }
+            ?.let { return it }
+        return titleObj.optString("simpleText").takeUnless { it.isEmpty() }
+    }
+
+    /** The first `UC…` browseId under the node's byline fields (the uploader channel id), or null. */
+    private fun searchNodeChannelId(node: JSONObject): String? {
+        for (key in BYLINE_KEYS) {
+            val runs = node.optJSONObject(key)?.optJSONArray("runs") ?: continue
+            for (i in 0 until runs.length()) {
+                val browseId = runs.optJSONObject(i)
+                    ?.optJSONObject("navigationEndpoint")
+                    ?.optJSONObject("browseEndpoint")
+                    ?.optString("browseId")
+                if (browseId != null && YouTube.channelIdRegex.matches(browseId)) return browseId
+            }
+        }
+        return null
+    }
+
+    /**
+     * Pure: from parsed search [videos], return the videoId whose channel id == [channelId] AND whose
+     * title matches [title] (exact trimmed case-insensitive, then normalized lowercase-alphanumeric —
+     * mirrors [matchTitle]). Channel-scoping is REQUIRED: the same query returns same-title videos from
+     * OTHER channels, so a wrong-channel match is never returned. Null when nothing channel+title matches.
+     */
+    fun pickVideoId(videos: List<SearchVideo>, channelId: String, title: String): String? {
+        val channelMatched = videos.filter { it.channelId == channelId }
+        if (channelMatched.isEmpty()) return null
+        val wanted = title.trim()
+        channelMatched.firstOrNull { it.title.trim().equals(wanted, ignoreCase = true) }
+            ?.let { return it.videoId }
+        val normWanted = normalize(wanted)
+        if (normWanted.isEmpty()) return null
+        return channelMatched.firstOrNull { normalize(it.title) == normWanted }?.videoId
+    }
 
     /** One fresh, cache-busted network GET of the uploads feed for [channelId]. */
     private fun fetchFeed(channelId: String): FeedFetch = try {
@@ -282,5 +510,25 @@ class LinkResolverImpl @Inject constructor() : LinkResolver {
         const val CALL_TIMEOUT_SECONDS = 6L
         const val USER_AGENT = "TeleForward (Android)"
         const val FEED_BASE = "https://www.youtube.com/feeds/videos.xml"
+
+        /** Base URL of the desktop search-results page scraped by the fallback. */
+        const val SEARCH_BASE = "https://www.youtube.com/results"
+
+        /** Desktop browser UA so YouTube serves the `ytInitialData`-bearing results page. */
+        const val DESKTOP_USER_AGENT =
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
+                "(KHTML, like Gecko) Chrome/121.0 Safari/537.36"
+
+        /** Pre-accepted EU consent cookie so the results page isn't replaced by a consent interstitial. */
+        const val CONSENT_COOKIE = "SOCS=CAISAiAD"
+
+        /** A YouTube video id is always 11 url-safe base64 characters. */
+        const val VIDEO_ID_LENGTH = 11
+
+        /** Byline fields (in preference order) under a search renderer that carry the uploader browseId. */
+        val BYLINE_KEYS = listOf("ownerText", "longBylineText", "shortBylineText")
+
+        const val SOURCE_RSS = "rss"
+        const val SOURCE_SEARCH = "search"
     }
 }

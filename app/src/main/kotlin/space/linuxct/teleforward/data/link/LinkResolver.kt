@@ -74,6 +74,14 @@ data class MagicLinkTrace(
     val url: String? = null,
     /** Always true when a network fetch happened: the feed URL carried a `nocache=` cache-buster. */
     val cacheBusted: Boolean = false,
+    /** Which source produced the resolved url: `"rss"` (authoritative feed) or `"search"`; null on a miss. */
+    val source: String? = null,
+    /** True when the YouTube-search fallback was attempted (after an RSS miss). */
+    val searchAttempted: Boolean = false,
+    /** Number of parsed video results the search returned (0 on a consent/no-`ytInitialData` page). */
+    val searchResultCount: Int? = null,
+    /** How many of those search results belonged to the target channel id. */
+    val searchChannelMatched: Int? = null,
 )
 
 /** The resolved url (null when none) plus the [trace] describing how it was reached. */
