@@ -150,6 +150,58 @@ delivery log, a listener-health indicator, and a shortcut to the battery-optimiz
 The **Delivery log** lists recent outbox rows with status chips and a retry action for failed
 or expired items.
 
+## Magic links ✨
+
+Some notifications are *about* something with a shareable URL — a new YouTube video, the song
+that's playing, a WhatsApp chat — but the notification text almost never contains that URL. The
+link lives inside the notification's tap action (a `PendingIntent`), which Android does **not**
+let another app read.
+
+**Magic links** reconstruct that URL from the identifying scraps a notification *does* expose (a
+channel id, a track + artist, a chat identity) and append it to the forwarded message as a final
+`Link: …` line — so a forward you read on your desktop is one click away from the real thing.
+
+It is **best-effort and heuristic by design.** When a link can't be reconstructed *confidently*,
+the item is forwarded normally, just without the extra line. A magic link is never a *wrong*
+link: TeleForward would rather add nothing than send you to the wrong video or chat.
+
+### Supported services
+
+| Service | Read from the notification | Reconstructed link | How |
+|---|---|---|---|
+| **YouTube** | channel id + video title | `youtube.com/watch?v=…` | public uploads feed, with a search fallback |
+| **Apple Music** | track + artist (now-playing) | `music.apple.com/…` (the song) | Apple's public iTunes Search API |
+| **WhatsApp** | the chat's phone number | `web.whatsapp.com/send/…` (opens the chat) | phone from the chat identity, or a saved contact (opt-in) |
+
+Packages covered: YouTube (`com.google.android.youtube` plus common re-packaged clients), Apple
+Music (`com.apple.android.music`), and WhatsApp (`com.whatsapp`, `com.whatsapp.w4b`).
+
+### What to expect
+
+- **Per-app toggle, on by default.** Open a supported app under **Apps** and you'll see a
+  **Reconstruct magic link** switch. Turn it off to opt that app out; the choice is remembered.
+- **It won't always land.** YouTube's feed and search results lag for busy channels; Apple Music
+  needs an exact catalogue match; WhatsApp needs a resolvable phone number. A miss simply means
+  no `Link:` line — never a broken one.
+- **YouTube self-heals.** If the first attempt (made as the message is sent) misses, the item
+  still forwards immediately, and a background worker keeps re-checking for up to about an hour,
+  then **edits the already-sent Telegram message** to add the link once it resolves. (Apple Music
+  and WhatsApp resolve instantly from a single lookup, so they don't need this.)
+
+### WhatsApp specifics
+
+WhatsApp Web can only open a chat by **phone number** — there is no URL that addresses a chat by
+its internal id. Modern WhatsApp hides the number behind a privacy identifier (`…@lid`), so:
+
+- **Unsaved contacts / older WhatsApp** expose the number directly (a `+…` title, or a
+  `…@s.whatsapp.net` identity), and are linked with **no extra permission**.
+- **Saved contacts on current WhatsApp** hide it; the only way back to the number is the sender's
+  address-book entry. This is strictly **opt-in**: a **Resolve saved contacts** card on the
+  WhatsApp settings page requests **Contacts** access — but only when you tap **Grant**, never
+  automatically. With it granted, saved-contact chats become `web.whatsapp.com/send` links. The
+  number **never leaves your device** except inside the link you forward to your own chat, and it
+  is never written to the diagnostics logs.
+
 ## Security & privacy
 
 - The **bot token** is encrypted at rest with a non-exportable AES-256-GCM key held in the
@@ -164,6 +216,11 @@ or expired items.
   or images are never extracted for non-matching or paused notifications.
 - `getUpdates` polling is used **only during pairing** (bounded); after pairing the app only
   ever sends.
+- **Contacts access is optional and opt-in.** The one sensitive permission the app can request is
+  `READ_CONTACTS`, used *solely* to turn a saved WhatsApp contact into a `web.whatsapp.com/send`
+  link (see *Magic links*). It's requested only when you tap **Grant** on the WhatsApp settings
+  card, checked live at send time, and the resolved number never leaves the device except inside
+  the link you forward to your own chat.
 
 ## Known limitations
 
@@ -184,6 +241,10 @@ or expired items.
   but disabling battery optimization for the app is recommended for reliable forwarding.
 - Delivery dedup is local only; a network drop after Telegram accepts a message but before the
   app sees the response can rarely double-post.
+- **Magic links are best-effort** (see *Magic links* above). They're reconstructed from
+  notification metadata via public feeds/APIs, so they can miss — a lagging YouTube feed, no
+  Apple Music catalogue match, or an unresolvable WhatsApp number — and simply add no link when
+  they do. Only YouTube, Apple Music, and WhatsApp are supported.
 
 ## Project layout
 
@@ -204,12 +265,13 @@ teleforward/
             ├── domain/                  # RawNotification, FilterEngine, models (pure Kotlin)
             ├── data/
             │   ├── db/                  # Room entities, DAOs, database
+            │   ├── link/                # magic-link reconstruction (YouTube, Apple Music, WhatsApp)
             │   ├── settings/            # Preferences DataStore
             │   ├── secret/              # Keystore-backed SecretStore (bot token)
             │   ├── telegram/            # API client, DTOs, message builder, sender, pairing
             │   └── repo/                # repositories
             ├── service/                 # NotificationListenerService + mapper
-            ├── work/                    # DeliveryWorker
+            ├── work/                    # DeliveryWorker, LinkResolveRetryWorker (magic-link edit)
             ├── util/                    # notification-access helpers
             ├── di/                      # Hilt modules
             └── ui/                      # onboarding, apps, channels, settings, log, navigation
