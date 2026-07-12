@@ -6,11 +6,13 @@ import androidx.room.TypeConverters
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 import space.linuxct.teleforward.data.db.dao.OutboxDao
+import space.linuxct.teleforward.data.db.dao.PendingLinkResolutionDao
 import space.linuxct.teleforward.data.db.dao.RulesDao
 import space.linuxct.teleforward.data.db.dao.SeenChannelDao
 import space.linuxct.teleforward.data.db.dao.SeenConversationDao
 import space.linuxct.teleforward.data.db.entity.OutboxEntity
 import space.linuxct.teleforward.data.db.entity.OutboxImageEntity
+import space.linuxct.teleforward.data.db.entity.PendingLinkResolutionEntity
 import space.linuxct.teleforward.data.db.entity.SeenChannelEntity
 import space.linuxct.teleforward.data.db.entity.SeenConversationEntity
 import space.linuxct.teleforward.data.db.entity.SelectionRuleEntity
@@ -22,8 +24,9 @@ import space.linuxct.teleforward.data.db.entity.SelectionRuleEntity
         SeenConversationEntity::class,
         OutboxEntity::class,
         OutboxImageEntity::class,
+        PendingLinkResolutionEntity::class,
     ],
-    version = 2,
+    version = 5,
     exportSchema = false,
 )
 @TypeConverters(Converters::class)
@@ -36,6 +39,8 @@ abstract class TeleForwardDatabase : RoomDatabase() {
     abstract fun seenConversationDao(): SeenConversationDao
 
     abstract fun outboxDao(): OutboxDao
+
+    abstract fun pendingLinkResolutionDao(): PendingLinkResolutionDao
 
     companion object {
         const val DATABASE_NAME = "teleforward.db"
@@ -68,6 +73,59 @@ abstract class TeleForwardDatabase : RoomDatabase() {
                         "`firstSeen` INTEGER NOT NULL, " +
                         "`lastSeen` INTEGER NOT NULL, " +
                         "PRIMARY KEY(`packageName`, `channelId`, `conversationId`, `userSerial`))",
+                )
+            }
+        }
+
+        /**
+         * v2 → v3: adds the nullable `youtubeChannelId` column to `outbox`, used by the "magic link"
+         * reconstruction to rebuild a YouTube video url from the channel id + title. Existing rows keep
+         * `NULL` (non-YouTube / pre-feature), so all queued items survive.
+         */
+        val MIGRATION_2_3 = object : Migration(2, 3) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `outbox` ADD COLUMN `youtubeChannelId` TEXT")
+            }
+        }
+
+        /**
+         * v3 → v4: adds the nullable `extractedLinks` column to `outbox` (Tier-0 link harvest), storing
+         * every `http`/`https` link found in the notification, newline-joined. Existing rows keep
+         * `NULL` (no harvested links), so all queued items survive.
+         */
+        val MIGRATION_3_4 = object : Migration(3, 4) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `outbox` ADD COLUMN `extractedLinks` TEXT")
+            }
+        }
+
+        /**
+         * v4 → v5: adds the `pending_link_resolution` table backing the magic-link edit-after-send
+         * retry (an item forwarded without a link is re-resolved in the background and the sent
+         * message edited to append it). New table only — no existing rows are touched. The DDL mirrors
+         * Room's generated schema exactly (column order/types, autoincrement PK, `nextAttemptAt` index)
+         * so Room's on-open validation passes.
+         */
+        val MIGRATION_4_5 = object : Migration(4, 5) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `pending_link_resolution` (" +
+                        "`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
+                        "`chatId` INTEGER NOT NULL, " +
+                        "`messageId` INTEGER NOT NULL, " +
+                        "`isCaption` INTEGER NOT NULL, " +
+                        "`sentText` TEXT NOT NULL, " +
+                        "`channelId` TEXT NOT NULL, " +
+                        "`videoTitle` TEXT NOT NULL, " +
+                        "`attemptCount` INTEGER NOT NULL, " +
+                        "`nextAttemptAt` INTEGER NOT NULL, " +
+                        "`expiresAt` INTEGER NOT NULL, " +
+                        "`createdAt` INTEGER NOT NULL)",
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS " +
+                        "`index_pending_link_resolution_nextAttemptAt` " +
+                        "ON `pending_link_resolution` (`nextAttemptAt`)",
                 )
             }
         }

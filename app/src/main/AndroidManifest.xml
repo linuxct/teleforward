@@ -50,6 +50,20 @@
         </service>
 
         <!--
+          FileProvider for sharing the assembled diagnostics dump (app-private filesDir/diag) to the
+          Android share sheet via a content:// URI with a per-consumer temporary read grant.
+        -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
+
+        <!--
           WorkManager is configured on-demand via TeleForwardApp : Configuration.Provider
           (Hilt-supplied HiltWorkerFactory), so the default startup initializer is removed.
         -->

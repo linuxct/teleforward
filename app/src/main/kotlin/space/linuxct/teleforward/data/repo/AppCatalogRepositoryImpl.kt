@@ -5,7 +5,8 @@ import android.content.Intent
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
@@ -32,6 +33,9 @@ class AppCatalogRepositoryImpl @Inject constructor(
     @Volatile
     private var installedCache: List<AppInfo>? = null
 
+    /** Bumped by [refresh] to force [observeCatalog] to re-emit with a freshly-queried app list. */
+    private val refreshTrigger = MutableStateFlow(0)
+
     override suspend fun getInstalledApps(): List<AppInfo> = withContext(Dispatchers.IO) {
         val pm = context.packageManager
         val launcherIntent = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
@@ -54,7 +58,16 @@ class AppCatalogRepositoryImpl @Inject constructor(
     }
 
     override fun observeCatalog(): Flow<List<AppInfo>> =
-        seenChannelRepository.observeAll().map { channels -> buildCatalog(channels) }
+        combine(seenChannelRepository.observeAll(), refreshTrigger) { channels, _ ->
+            buildCatalog(channels)
+        }
+
+    override fun refresh() {
+        // Drop the cached installed-apps list so the next buildCatalog re-queries PackageManager,
+        // then nudge the trigger so observeCatalog re-emits even if the seen-channels table is idle.
+        installedCache = null
+        refreshTrigger.value += 1
+    }
 
     override suspend fun getAppInfo(packageName: String): AppInfo? {
         val lastSeen = seenChannelRepository.lastSeenForPackage(packageName)

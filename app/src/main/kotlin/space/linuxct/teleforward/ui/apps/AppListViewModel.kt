@@ -47,7 +47,7 @@ data class AppListUiState(
  */
 @HiltViewModel
 class AppListViewModel @Inject constructor(
-    appCatalogRepository: AppCatalogRepository,
+    private val appCatalogRepository: AppCatalogRepository,
     private val rulesRepository: RulesRepository,
 ) : ViewModel() {
 
@@ -73,6 +73,11 @@ class AppListViewModel @Inject constructor(
 
     fun onFilterChange(value: AppFilter) {
         filterFlow.value = value
+    }
+
+    /** Re-query installed apps so newly-installed apps appear (called when the screen resumes). */
+    fun onRefresh() {
+        appCatalogRepository.refresh()
     }
 
     /** Whole-app switch: INCLUDE the app when turned on, remove the whole-app rule when turned off. */

@@ -55,6 +55,15 @@ class SettingsRepositoryImpl @Inject constructor(
     override val lastNotifiedUpdateVersion: Flow<String?> =
         dataStore.data.map { it[SettingsKeys.LAST_NOTIFIED_UPDATE_VERSION] }
 
+    override val diagnosticsEnabled: Flow<Boolean> =
+        dataStore.data.map { it[SettingsKeys.DIAGNOSTICS_ENABLED] ?: SettingsKeys.Defaults.DIAGNOSTICS_ENABLED }
+
+    override val diagnosticsPackages: Flow<String?> =
+        dataStore.data.map { it[SettingsKeys.DIAGNOSTICS_PACKAGES] }
+
+    override val magicLinkDisabledPackages: Flow<Set<String>> =
+        dataStore.data.map { it[SettingsKeys.MAGIC_LINK_DISABLED_PACKAGES] ?: emptySet() }
+
     override suspend fun setChatId(chatId: Long?) {
         dataStore.edit { prefs ->
             if (chatId == null) prefs.remove(SettingsKeys.CHAT_ID) else prefs[SettingsKeys.CHAT_ID] = chatId
@@ -111,6 +120,32 @@ class SettingsRepositoryImpl @Inject constructor(
         }
     }
 
+    override suspend fun setDiagnosticsEnabled(enabled: Boolean) {
+        dataStore.edit { prefs -> prefs[SettingsKeys.DIAGNOSTICS_ENABLED] = enabled }
+    }
+
+    override suspend fun setDiagnosticsPackages(packages: String?) {
+        dataStore.edit { prefs ->
+            if (packages == null) {
+                prefs.remove(SettingsKeys.DIAGNOSTICS_PACKAGES)
+            } else {
+                prefs[SettingsKeys.DIAGNOSTICS_PACKAGES] = packages
+            }
+        }
+    }
+
+    override suspend fun setMagicLinkEnabled(packageName: String, enabled: Boolean) {
+        dataStore.edit { prefs ->
+            val current = prefs[SettingsKeys.MAGIC_LINK_DISABLED_PACKAGES] ?: emptySet()
+            val updated = if (enabled) current - packageName else current + packageName
+            if (updated.isEmpty()) {
+                prefs.remove(SettingsKeys.MAGIC_LINK_DISABLED_PACKAGES)
+            } else {
+                prefs[SettingsKeys.MAGIC_LINK_DISABLED_PACKAGES] = updated
+            }
+        }
+    }
+
     override suspend fun snapshot(): SettingsSnapshot {
         val prefs = dataStore.data.first()
         return SettingsSnapshot(
@@ -124,6 +159,8 @@ class SettingsRepositoryImpl @Inject constructor(
             outboxExpiryHours = prefs[SettingsKeys.OUTBOX_EXPIRY_HOURS] ?: SettingsKeys.Defaults.OUTBOX_EXPIRY_HOURS,
             skipOngoing = prefs[SettingsKeys.SKIP_ONGOING] ?: SettingsKeys.Defaults.SKIP_ONGOING,
             getUpdatesOffset = prefs[SettingsKeys.GET_UPDATES_OFFSET] ?: SettingsKeys.Defaults.GET_UPDATES_OFFSET,
+            diagnosticsEnabled = prefs[SettingsKeys.DIAGNOSTICS_ENABLED] ?: SettingsKeys.Defaults.DIAGNOSTICS_ENABLED,
+            diagnosticsPackages = prefs[SettingsKeys.DIAGNOSTICS_PACKAGES],
         )
     }
 

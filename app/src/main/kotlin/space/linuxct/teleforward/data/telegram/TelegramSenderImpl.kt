@@ -11,6 +11,7 @@ import okhttp3.RequestBody.Companion.toRequestBody
 import retrofit2.Response
 import space.linuxct.teleforward.data.db.entity.OutboxWithImages
 import space.linuxct.teleforward.data.telegram.dto.TelegramResponse
+import space.linuxct.teleforward.data.telegram.dto.TgMessage
 import java.io.File
 import java.io.IOException
 import javax.inject.Inject
@@ -27,20 +28,45 @@ class TelegramSenderImpl @Inject constructor(
     private val messageBuilder: MessageBuilder,
 ) : TelegramSender {
 
-    override suspend fun send(item: OutboxWithImages, chatId: Long): SendResult {
-        return when (val plan = messageBuilder.plan(item)) {
-            is SendPlan.TextOnly -> sendText(chatId, plan.text)
+    override suspend fun send(item: OutboxWithImages, chatId: Long, extraLink: String?): SendResult {
+        return when (val plan = messageBuilder.plan(item, extraLink)) {
+            // Editable primary = the sendMessage itself; a later Link: line goes in its text.
+            is SendPlan.TextOnly -> when (val text = sendText(chatId, plan.text)) {
+                is SendResult.Success -> text.copy(
+                    editableMessageId = text.messageIds.firstOrNull(),
+                    editableIsCaption = false,
+                    editableText = plan.text,
+                )
+                else -> text
+            }
 
-            is SendPlan.SinglePhoto -> sendPhoto(chatId, plan.imagePath, plan.caption)
+            // Editable primary = the photo; a later Link: line goes in its caption.
+            is SendPlan.SinglePhoto -> when (val photo = sendPhoto(chatId, plan.imagePath, plan.caption)) {
+                is SendResult.Success -> photo.copy(
+                    editableMessageId = photo.messageIds.firstOrNull(),
+                    editableIsCaption = true,
+                    editableText = plan.caption,
+                )
+                else -> photo
+            }
 
             is SendPlan.PhotoWithSeparateText -> {
                 val ids = ArrayList<Long>()
-                when (val text = sendText(chatId, plan.text)) {
-                    is SendResult.Success -> ids += text.messageIds
+                // Editable primary = the separate text message (it carries the body); capture its id.
+                val editableId: Long? = when (val text = sendText(chatId, plan.text)) {
+                    is SendResult.Success -> {
+                        ids += text.messageIds
+                        text.messageIds.firstOrNull()
+                    }
                     else -> return text
                 }
                 when (val photo = sendPhoto(chatId, plan.imagePath, caption = "")) {
-                    is SendResult.Success -> SendResult.Success(ids + photo.messageIds)
+                    is SendResult.Success -> SendResult.Success(
+                        ids + photo.messageIds,
+                        editableMessageId = editableId,
+                        editableIsCaption = false,
+                        editableText = plan.text,
+                    )
                     else -> photo
                 }
             }
@@ -54,8 +80,14 @@ class TelegramSenderImpl @Inject constructor(
                         else -> return text
                     }
                 }
+                // Editable primary = the first media item, which carries the caption.
                 when (val group = sendMediaGroup(chatId, plan.imagePaths, plan.caption)) {
-                    is SendResult.Success -> SendResult.Success(ids + group.messageIds)
+                    is SendResult.Success -> SendResult.Success(
+                        ids + group.messageIds,
+                        editableMessageId = group.messageIds.firstOrNull(),
+                        editableIsCaption = true,
+                        editableText = plan.caption,
+                    )
                     else -> group
                 }
             }
@@ -70,8 +102,9 @@ class TelegramSenderImpl @Inject constructor(
                     }
                 }
                 // Send every batch in this call; the caption rides the first item of the first
-                // batch. A trailing batch of one image can't be a media group, so it falls back to
-                // sendPhoto.
+                // batch (which is also the editable primary). A trailing batch of one image can't be a
+                // media group, so it falls back to sendPhoto.
+                var editableId: Long? = null
                 plan.batches.forEachIndexed { index, batch ->
                     if (batch.isEmpty()) return@forEachIndexed
                     val caption = if (index == 0) plan.caption else ""
@@ -81,17 +114,57 @@ class TelegramSenderImpl @Inject constructor(
                         sendMediaGroup(chatId, batch, caption)
                     }
                     when (result) {
-                        is SendResult.Success -> ids += result.messageIds
+                        is SendResult.Success -> {
+                            if (index == 0) editableId = result.messageIds.firstOrNull()
+                            ids += result.messageIds
+                        }
                         else -> return result
                     }
                 }
-                SendResult.Success(ids)
+                SendResult.Success(
+                    ids,
+                    editableMessageId = editableId,
+                    editableIsCaption = true,
+                    editableText = plan.caption,
+                )
             }
         }
     }
 
     override suspend fun sendTestMessage(chatId: Long, text: String): SendResult =
         sendText(chatId, text)
+
+    override suspend fun editAppendLink(
+        chatId: Long,
+        messageId: Long,
+        isCaption: Boolean,
+        currentText: String,
+        url: String,
+    ): SendResult {
+        val newText = messageBuilder.appendLink(currentText, url, isCaption)
+        return try {
+            val response = if (isCaption) {
+                api.editMessageCaption(
+                    chatId = chatId,
+                    messageId = messageId,
+                    caption = newText,
+                    parseMode = HTML,
+                )
+            } else {
+                api.editMessageText(
+                    chatId = chatId,
+                    messageId = messageId,
+                    text = newText,
+                    parseMode = HTML,
+                )
+            }
+            mapEditResponse(response)
+        } catch (e: IOException) {
+            SendResult.Transient(e.message ?: "network error")
+        } catch (e: Exception) {
+            SendResult.Transient(e.message ?: "unexpected error")
+        }
+    }
 
     private suspend fun sendText(chatId: Long, text: String): SendResult = try {
         mapResponse(api.sendMessage(chatId = chatId, text = text, parseMode = HTML)) { env ->
@@ -194,6 +267,47 @@ class TelegramSenderImpl @Inject constructor(
                 SendResult.RetryAfter(error.retryAfter ?: DEFAULT_RETRY_AFTER_SECONDS)
             code == 403 || httpCode == 403 -> SendResult.Terminal(description)
             code == 400 || httpCode == 400 -> SendResult.BadRequest(description)
+            httpCode in 500..599 || code in 500..599 -> SendResult.Transient(description)
+            else -> SendResult.Terminal(description)
+        }
+    }
+
+    /** Map an edit (editMessageText/Caption) response onto a [SendResult] via [classifyEdit]. */
+    private fun mapEditResponse(response: Response<TelegramResponse<TgMessage>>): SendResult {
+        if (response.isSuccessful) {
+            val env = response.body()
+            if (env != null && env.ok) {
+                return SendResult.Success(env.result?.let { listOf(it.messageId) } ?: emptyList())
+            }
+            val error = if (env != null) {
+                TgError(env.errorCode, env.description, env.parameters?.retryAfter)
+            } else {
+                TgError(null, null, null)
+            }
+            return classifyEdit(response.code(), error)
+        }
+        return classifyEdit(response.code(), parseTgError(response.errorBody()?.string()))
+    }
+
+    /**
+     * Edit-specific classification. Differs from [classify] on the 400 family: a "message is not
+     * modified" reply means the append is already applied (treat as done → Success), while
+     * "message to edit not found" / "MESSAGE_ID_INVALID" / "can't be edited" are unrecoverable
+     * (Terminal — give up on the row). Any other 400 is a [SendResult.BadRequest].
+     */
+    private fun classifyEdit(httpCode: Int, error: TgError): SendResult {
+        val code = error.code ?: httpCode
+        val description = error.description ?: "HTTP $httpCode"
+        val lower = description.lowercase()
+        return when {
+            code == 429 || httpCode == 429 ->
+                SendResult.RetryAfter(error.retryAfter ?: DEFAULT_RETRY_AFTER_SECONDS)
+            lower.contains("message is not modified") -> SendResult.Success(emptyList())
+            lower.contains("message to edit not found") ||
+                lower.contains("message_id_invalid") ||
+                lower.contains("can't be edited") -> SendResult.Terminal(description)
+            code == 400 || httpCode == 400 -> SendResult.BadRequest(description)
+            code == 403 || httpCode == 403 -> SendResult.Terminal(description)
             httpCode in 500..599 || code in 500..599 -> SendResult.Transient(description)
             else -> SendResult.Terminal(description)
         }

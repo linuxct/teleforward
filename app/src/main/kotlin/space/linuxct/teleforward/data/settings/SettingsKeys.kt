@@ -4,6 +4,7 @@ import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
+import androidx.datastore.preferences.core.stringSetPreferencesKey
 
 /**
  * Preferences DataStore key definitions and default values, shared by the implementation and any
@@ -24,6 +25,15 @@ object SettingsKeys {
     val GET_UPDATES_OFFSET = longPreferencesKey("get_updates_offset")
     val LAST_NOTIFIED_UPDATE_VERSION = stringPreferencesKey("last_notified_update_version")
 
+    // Diagnostics (advanced, dev-only forensic logging). Off by default; when on, captures ALL apps
+    // unless DIAGNOSTICS_PACKAGES restricts to a CSV allow-list (null/absent = all apps).
+    val DIAGNOSTICS_ENABLED = booleanPreferencesKey("diagnostics_enabled")
+    val DIAGNOSTICS_PACKAGES = stringPreferencesKey("diagnostics_packages")
+
+    // Magic-link reconstruction. Stores the DISABLED (opt-out) set, so absence ⇒ every supported
+    // YouTube app is ON by default (fresh install and after updates, since DataStore persists).
+    val MAGIC_LINK_DISABLED_PACKAGES = stringSetPreferencesKey("magic_link_disabled_packages")
+
     object Defaults {
         const val FORWARDING_ENABLED = true
         const val ONBOARDING_COMPLETE = false
@@ -32,5 +42,6 @@ object SettingsKeys {
         const val OUTBOX_EXPIRY_HOURS = 48
         const val SKIP_ONGOING = true
         const val GET_UPDATES_OFFSET = 0L
+        const val DIAGNOSTICS_ENABLED = false
     }
 }

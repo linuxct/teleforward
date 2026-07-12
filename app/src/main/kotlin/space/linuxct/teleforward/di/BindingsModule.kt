@@ -16,6 +16,8 @@ import space.linuxct.teleforward.data.repo.SeenChannelRepository
 import space.linuxct.teleforward.data.repo.SeenChannelRepositoryImpl
 import space.linuxct.teleforward.data.repo.SeenConversationRepository
 import space.linuxct.teleforward.data.repo.SeenConversationRepositoryImpl
+import space.linuxct.teleforward.data.link.LinkResolver
+import space.linuxct.teleforward.data.link.LinkResolverImpl
 import space.linuxct.teleforward.data.secret.KeystoreSecretStore
 import space.linuxct.teleforward.data.secret.SecretStore
 import space.linuxct.teleforward.data.settings.SettingsRepository
@@ -28,6 +30,10 @@ import space.linuxct.teleforward.data.telegram.TelegramSender
 import space.linuxct.teleforward.data.telegram.TelegramSenderImpl
 import space.linuxct.teleforward.data.update.UpdateRepository
 import space.linuxct.teleforward.data.update.UpdateRepositoryImpl
+import space.linuxct.teleforward.diag.DiagExporter
+import space.linuxct.teleforward.diag.DiagExporterImpl
+import space.linuxct.teleforward.diag.DiagStore
+import space.linuxct.teleforward.diag.DiagStoreImpl
 import space.linuxct.teleforward.service.NotificationMapper
 import space.linuxct.teleforward.service.NotificationMapperImpl
 import javax.inject.Singleton
@@ -84,6 +90,10 @@ abstract class BindingsModule {
 
     @Binds
     @Singleton
+    abstract fun bindLinkResolver(impl: LinkResolverImpl): LinkResolver
+
+    @Binds
+    @Singleton
     abstract fun bindPairingRepository(impl: PairingRepositoryImpl): PairingRepository
 
     @Binds
@@ -93,4 +103,12 @@ abstract class BindingsModule {
     @Binds
     @Singleton
     abstract fun bindUpdateRepository(impl: UpdateRepositoryImpl): UpdateRepository
+
+    @Binds
+    @Singleton
+    abstract fun bindDiagStore(impl: DiagStoreImpl): DiagStore
+
+    @Binds
+    @Singleton
+    abstract fun bindDiagExporter(impl: DiagExporterImpl): DiagExporter
 }

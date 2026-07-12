@@ -17,6 +17,8 @@ data class SettingsSnapshot(
     val outboxExpiryHours: Int,
     val skipOngoing: Boolean,
     val getUpdatesOffset: Long,
+    val diagnosticsEnabled: Boolean,
+    val diagnosticsPackages: String?,
 )
 
 /**
@@ -67,6 +69,26 @@ interface SettingsRepository {
      */
     val lastNotifiedUpdateVersion: Flow<String?>
 
+    /**
+     * Whether the advanced forensic diagnostics logger is enabled. Off by default. Dev-only feature:
+     * when on, the listener captures/probes ALL apps' notifications independent of the forward filter.
+     */
+    val diagnosticsEnabled: Flow<Boolean>
+
+    /**
+     * Optional CSV allow-list of package names the diagnostics logger restricts to. Null (the
+     * default) means "all apps". Currently informational for the listener; forward-compatible with a
+     * future per-package filter.
+     */
+    val diagnosticsPackages: Flow<String?>
+
+    /**
+     * Packages for which the "magic link" reconstruction is opted OUT. Stored as a disabled set so the
+     * default (empty) means every supported YouTube app is enabled. "Enabled for pkg" therefore means
+     * `pkg ∈ YouTube.PACKAGES && pkg ∉ magicLinkDisabledPackages`.
+     */
+    val magicLinkDisabledPackages: Flow<Set<String>>
+
     suspend fun setChatId(chatId: Long?)
 
     suspend fun setChatDisplayName(name: String?)
@@ -88,6 +110,16 @@ interface SettingsRepository {
     suspend fun setGetUpdatesOffset(offset: Long)
 
     suspend fun setLastNotifiedUpdateVersion(version: String?)
+
+    suspend fun setDiagnosticsEnabled(enabled: Boolean)
+
+    suspend fun setDiagnosticsPackages(packages: String?)
+
+    /**
+     * Enable/disable magic-link reconstruction for [packageName]. `enabled = true` removes it from the
+     * disabled set (back to the default-on state); `enabled = false` adds it.
+     */
+    suspend fun setMagicLinkEnabled(packageName: String, enabled: Boolean)
 
     /** Synchronous-friendly one-shot read of every setting. */
     suspend fun snapshot(): SettingsSnapshot

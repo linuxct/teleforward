@@ -3,17 +3,30 @@ package space.linuxct.teleforward.work
 import android.content.Context
 import androidx.hilt.work.HiltWorker
 import androidx.work.CoroutineWorker
+import androidx.work.WorkManager
 import androidx.work.WorkerParameters
 import dagger.assisted.Assisted
 import dagger.assisted.AssistedInject
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
+import org.json.JSONObject
+import space.linuxct.teleforward.data.db.dao.PendingLinkResolutionDao
+import space.linuxct.teleforward.data.db.entity.OutboxEntity
 import space.linuxct.teleforward.data.db.entity.OutboxWithImages
+import space.linuxct.teleforward.data.db.entity.PendingLinkResolutionEntity
+import space.linuxct.teleforward.data.link.LinkResolver
+import space.linuxct.teleforward.data.link.MagicLinkOutcome
+import space.linuxct.teleforward.data.link.MagicLinkResult
+import space.linuxct.teleforward.data.link.YouTube
 import space.linuxct.teleforward.data.repo.OutboxRepository
 import space.linuxct.teleforward.data.settings.SettingsRepository
 import space.linuxct.teleforward.data.telegram.MessageBuilder
 import space.linuxct.teleforward.data.telegram.SendResult
 import space.linuxct.teleforward.data.telegram.TelegramSender
+import space.linuxct.teleforward.diag.DiagStore
+import space.linuxct.teleforward.diag.ForensicRecord
 import java.io.File
 import kotlin.coroutines.cancellation.CancellationException
 
@@ -40,6 +53,10 @@ class DeliveryWorker @AssistedInject constructor(
     private val telegramSender: TelegramSender,
     private val messageBuilder: MessageBuilder,
     private val settings: SettingsRepository,
+    private val linkResolver: LinkResolver,
+    private val diagStore: DiagStore,
+    private val pendingLinkResolutionDao: PendingLinkResolutionDao,
+    private val workManager: WorkManager,
 ) : CoroutineWorker(appContext, params) {
 
     override suspend fun doWork(): Result = withContext(Dispatchers.IO) {
@@ -84,10 +101,24 @@ class DeliveryWorker @AssistedInject constructor(
 
             try {
                 outboxRepository.markSending(id)
-                when (val result = telegramSender.send(item, chatId)) {
+                // Best-effort "magic link" reconstruction, fully isolated from the send outcome:
+                // bounded by an 8s timeout and try/caught, so a failure/timeout only means no Link:
+                // line — it never throws, retries, or fails the item.
+                val resolution = withTimeoutOrNull(LINK_RESOLVE_TIMEOUT_MS) {
+                    runCatching {
+                        linkResolver.resolve(row, settings.magicLinkDisabledPackages.first())
+                    }.getOrNull()
+                }
+                // Release-safe resolution trace: purely diagnostic, never affects delivery.
+                resolution?.let { logMagicLinkTrace(row, it) }
+                when (val result = telegramSender.send(item, chatId, resolution?.url)) {
                     is SendResult.Success -> {
                         outboxRepository.markSent(id)
                         deleteImageFiles(item)
+                        // Best-effort: if the first magic-link attempt missed, queue a background
+                        // retry to edit the just-sent message once the link resolves. Fully isolated
+                        // from delivery (see the method's runCatching).
+                        maybeScheduleLinkRetry(row, resolution, result, chatId, now)
                     }
 
                     is SendResult.RetryAfter -> {
@@ -135,6 +166,86 @@ class DeliveryWorker @AssistedInject constructor(
         if (needsRetry) Result.retry() else Result.success()
     }
 
+    /**
+     * When the first, synchronous magic-link attempt missed but the item was still forwarded, persist
+     * a [PendingLinkResolutionEntity] and kick the background [LinkResolveRetryWorker] to re-resolve
+     * and edit the sent message later. Gated to exactly the retryable case: a supported, non-opted-out
+     * YouTube package, a first attempt that produced no url via [MagicLinkOutcome.NO_MATCH] /
+     * [MagicLinkOutcome.FEED_ERROR], a known channel id + non-blank title, and a clean single editable
+     * target on the send. Wrapped in [runCatching] so it can NEVER throw into or affect delivery.
+     */
+    private suspend fun maybeScheduleLinkRetry(
+        row: OutboxEntity,
+        resolution: MagicLinkResult?,
+        sendResult: SendResult.Success,
+        chatId: Long,
+        now: Long,
+    ) {
+        runCatching {
+            if (resolution == null || resolution.url != null) return
+            if (row.packageName !in YouTube.PACKAGES) return
+            if (row.packageName in settings.magicLinkDisabledPackages.first()) return
+            val outcome = resolution.trace.outcome
+            if (outcome != MagicLinkOutcome.NO_MATCH && outcome != MagicLinkOutcome.FEED_ERROR) return
+            val channelId = resolution.trace.channelId ?: return
+            val videoTitle = (resolution.trace.videoTitle ?: row.body)?.trim()
+            if (videoTitle.isNullOrBlank()) return
+            val editableMessageId = sendResult.editableMessageId ?: return
+            val editableText = sendResult.editableText ?: return
+
+            pendingLinkResolutionDao.insert(
+                PendingLinkResolutionEntity(
+                    chatId = chatId,
+                    messageId = editableMessageId,
+                    isCaption = sendResult.editableIsCaption,
+                    sentText = editableText,
+                    channelId = channelId,
+                    videoTitle = videoTitle,
+                    attemptCount = 0,
+                    nextAttemptAt = now + LinkResolveRetryWorker.FIRST_DELAY_MS,
+                    expiresAt = now + LinkResolveRetryWorker.MAX_WINDOW_MS,
+                    createdAt = now,
+                ),
+            )
+            LinkResolveRetryWorker.schedule(workManager, LinkResolveRetryWorker.FIRST_DELAY_MS)
+        }
+    }
+
+    /**
+     * Append a `magicLinkTrace` diagnostics record for a YouTube item so a missing `Link:` line can
+     * be explained and feed staleness measured (`feedNewestPublished` vs the notification `postTime`).
+     * Gated on diagnostics being enabled AND the item being a supported YouTube package. Entirely
+     * best-effort: wrapped so it can NEVER throw into (or otherwise affect) the send path, and it uses
+     * only public APIs so it works in RELEASE builds.
+     */
+    private suspend fun logMagicLinkTrace(row: OutboxEntity, resolution: MagicLinkResult) {
+        runCatching {
+            if (!settings.diagnosticsEnabled.first()) return
+            if (row.packageName !in YouTube.PACKAGES) return
+            val t = resolution.trace
+            val json = JSONObject().apply {
+                put("kind", "magicLinkTrace")
+                put("phase", "initial")
+                put("capturedAt", System.currentTimeMillis())
+                put("packageName", row.packageName)
+                put("postTime", row.postTime)
+                put("outcome", t.outcome.name)
+                putOpt("channelId", t.channelId)
+                putOpt("videoTitle", t.videoTitle)
+                putOpt("feedEntryCount", t.feedEntryCount)
+                putOpt("feedNewestPublished", t.feedNewestPublished)
+                putOpt("feedOldestPublished", t.feedOldestPublished)
+                putOpt("feedNewestTitle", t.feedNewestTitle)
+                putOpt("httpStatus", t.httpStatus)
+                putOpt("error", t.error)
+                putOpt("videoId", t.videoId)
+                putOpt("url", t.url)
+                put("cacheBusted", t.cacheBusted)
+            }
+            diagStore.append(ForensicRecord(json.toString()))
+        }
+    }
+
     /** Best-effort deletion of an item's cached image files; missing/undeletable files are ignored. */
     private fun deleteImageFiles(item: OutboxWithImages) {
         item.images.forEach { image ->
@@ -165,6 +276,9 @@ class DeliveryWorker @AssistedInject constructor(
 
         private const val MILLIS_PER_SECOND = 1000L
         private const val MILLIS_PER_HOUR = 60L * 60L * 1000L
+
+        /** Upper bound on best-effort magic-link resolution; expiry here just means "no Link: line". */
+        private const val LINK_RESOLVE_TIMEOUT_MS = 8_000L
 
         private const val NO_RECIPIENT_ERROR = "no recipient paired"
     }

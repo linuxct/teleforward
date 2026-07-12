@@ -54,6 +54,33 @@ interface TelegramApi {
         @Field("disable_web_page_preview") disableWebPagePreview: Boolean = true,
     ): Response<TelegramResponse<TgMessage>>
 
+    /**
+     * Edit the text of a previously sent (non-media) message — used by the magic-link retry to append
+     * a resolved `Link:` line after the fact. Returns the edited [TgMessage] on success.
+     */
+    @FormUrlEncoded
+    @POST("editMessageText")
+    suspend fun editMessageText(
+        @Field("chat_id") chatId: Long,
+        @Field("message_id") messageId: Long,
+        @Field("text") text: String,
+        @Field("parse_mode") parseMode: String? = "HTML",
+        @Field("disable_web_page_preview") disableWebPagePreview: Boolean = true,
+    ): Response<TelegramResponse<TgMessage>>
+
+    /**
+     * Edit the caption of a previously sent media message (photo / media group's first item) — the
+     * media-carrying counterpart to [editMessageText] for the magic-link retry.
+     */
+    @FormUrlEncoded
+    @POST("editMessageCaption")
+    suspend fun editMessageCaption(
+        @Field("chat_id") chatId: Long,
+        @Field("message_id") messageId: Long,
+        @Field("caption") caption: String,
+        @Field("parse_mode") parseMode: String? = "HTML",
+    ): Response<TelegramResponse<TgMessage>>
+
     @Multipart
     @POST("sendPhoto")
     suspend fun sendPhoto(

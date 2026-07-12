@@ -25,6 +25,7 @@ import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -43,6 +44,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -97,6 +99,12 @@ fun SettingsRoute(onBack: () -> Unit) {
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
+    // One-shot diagnostics share intents: the VM builds the dump and emits the chooser Intent here;
+    // we fire it from the UI so FLAG_SECURE / activity-launch stays on the composition side.
+    LaunchedEffect(Unit) {
+        viewModel.shareIntents.collect { intent -> context.launchSafely(intent) }
+    }
+
     SettingsScreen(
         state = state,
         onBack = onBack,
@@ -113,6 +121,9 @@ fun SettingsRoute(onBack: () -> Unit) {
         onClearDelivered = viewModel::clearDeliveredLog,
         onClearAll = viewModel::clearAllLog,
         onCheckForUpdates = viewModel::onCheckForUpdates,
+        onSetDiagnosticsEnabled = viewModel::setDiagnosticsEnabled,
+        onDumpDiagnostics = viewModel::dumpDiagnostics,
+        onClearDiagnostics = viewModel::clearDiagnostics,
     )
 }
 
@@ -133,6 +144,9 @@ private fun SettingsScreen(
     onClearDelivered: () -> Unit,
     onClearAll: () -> Unit,
     onCheckForUpdates: () -> Unit,
+    onSetDiagnosticsEnabled: (Boolean) -> Unit,
+    onDumpDiagnostics: () -> Unit,
+    onClearDiagnostics: () -> Unit,
 ) {
     AppScaffold(title = "Settings", onBack = onBack) { padding ->
         Column(
@@ -176,6 +190,14 @@ private fun SettingsScreen(
             AboutCard(
                 state = state,
                 onCheckForUpdates = onCheckForUpdates,
+            )
+
+            SectionHeader("Diagnostics (advanced)")
+            DiagnosticsCard(
+                state = state,
+                onSetDiagnosticsEnabled = onSetDiagnosticsEnabled,
+                onDumpDiagnostics = onDumpDiagnostics,
+                onClearDiagnostics = onClearDiagnostics,
             )
         }
     }
@@ -581,6 +603,101 @@ private fun AboutCard(
                     color = MaterialTheme.colorScheme.error,
                 )
             }
+        }
+    }
+}
+
+// endregion
+
+// region Diagnostics (advanced)
+
+@Composable
+private fun DiagnosticsCard(
+    state: SettingsUiState,
+    onSetDiagnosticsEnabled: (Boolean) -> Unit,
+    onDumpDiagnostics: () -> Unit,
+    onClearDiagnostics: () -> Unit,
+) {
+    SettingsCard {
+        // Sensitive-data warning: capture records full notification content.
+        Row(verticalAlignment = Alignment.Top) {
+            Icon(
+                Icons.Filled.Warning,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.error,
+                modifier = Modifier.size(20.dp),
+            )
+            Spacer(Modifier.width(12.dp))
+            Text(
+                text = "Records full notification content (titles, messages, sender info) for " +
+                    "debugging. Off by default. Share the dump only with people you trust.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+
+        SettingSwitchRow(
+            title = "Capture diagnostic logs",
+            subtitle = "Logs every notification from all apps while on.",
+            checked = state.diagnosticsEnabled,
+            onCheckedChange = onSetDiagnosticsEnabled,
+        )
+
+        HorizontalDivider()
+
+        val recordsLabel = "Captured: ${state.diagRecordCount} " +
+            if (state.diagRecordCount == 1) "record" else "records"
+        Text(
+            text = recordsLabel,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+
+        val dumping = state.dumpState is ActionState.Running
+        var confirmClear by remember { mutableStateOf(false) }
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            FilledTonalButton(
+                onClick = onDumpDiagnostics,
+                enabled = !dumping && state.diagRecordCount > 0,
+            ) {
+                Icon(Icons.Filled.Share, contentDescription = null, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.width(8.dp))
+                Text("Dump logs (share)")
+            }
+            OutlinedButton(
+                onClick = { confirmClear = true },
+                enabled = state.diagRecordCount > 0,
+            ) {
+                Icon(Icons.Filled.Clear, contentDescription = null, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.width(8.dp))
+                Text("Clear logs")
+            }
+            if (dumping) BusyIndicator()
+        }
+        ActionStatusText(state.dumpState)
+
+        if (confirmClear) {
+            AlertDialog(
+                onDismissRequest = { confirmClear = false },
+                title = { Text("Clear diagnostic logs?") },
+                text = {
+                    Text("This permanently deletes all ${state.diagRecordCount} captured records.")
+                },
+                confirmButton = {
+                    TextButton(onClick = {
+                        confirmClear = false
+                        onClearDiagnostics()
+                    }) {
+                        Text("Clear logs")
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { confirmClear = false }) { Text("Cancel") }
+                },
+            )
         }
     }
 }

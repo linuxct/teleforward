@@ -34,10 +34,12 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import space.linuxct.teleforward.R
 import space.linuxct.teleforward.designsystem.AppScaffold
 import space.linuxct.teleforward.designsystem.SectionHeader
 
@@ -60,6 +62,7 @@ fun ChannelPickerRoute(
         onToggleWholeApp = viewModel::onToggleWholeApp,
         onToggleChannel = viewModel::onToggleChannel,
         onToggleConversation = viewModel::onToggleConversation,
+        onToggleMagicLink = viewModel::onToggleMagicLink,
     )
 }
 
@@ -71,6 +74,7 @@ private fun ChannelPickerScreen(
     onToggleWholeApp: (Boolean) -> Unit,
     onToggleChannel: (String, Boolean) -> Unit,
     onToggleConversation: (conversationId: String, channelId: String, enabled: Boolean) -> Unit,
+    onToggleMagicLink: (Boolean) -> Unit,
 ) {
     val title = state.appLabel.ifBlank { fallbackName }
     AppScaffold(title = title, onBack = onBack) { padding ->
@@ -87,6 +91,14 @@ private fun ChannelPickerScreen(
                     onToggle = onToggleWholeApp,
                 )
             }
+            if (state.magicLinkSupported) {
+                item {
+                    MagicLinkCard(
+                        enabled = state.magicLinkEnabled,
+                        onToggle = onToggleMagicLink,
+                    )
+                }
+            }
             item { PrecedenceExplainer() }
             item { SectionHeader("Channels") }
 
@@ -102,7 +114,7 @@ private fun ChannelPickerScreen(
 
                 state.channels.isEmpty() -> item { EmptyChannels() }
 
-                else -> items(state.channels, key = { it.channelId }) { channel ->
+                else -> items(state.channels, key = { "channel:${it.channelId}" }) { channel ->
                     ChannelRow(
                         channel = channel,
                         onToggle = { onToggleChannel(channel.channelId, it) },
@@ -115,7 +127,7 @@ private fun ChannelPickerScreen(
                 if (state.conversations.isEmpty()) {
                     item { EmptyConversations() }
                 } else {
-                    items(state.conversations, key = { it.conversationId }) { conversation ->
+                    items(state.conversations, key = { "conversation:${it.conversationId}" }) { conversation ->
                         ConversationRow(
                             conversation = conversation,
                             onToggle = {
@@ -129,6 +141,48 @@ private fun ChannelPickerScreen(
                     }
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun MagicLinkCard(
+    enabled: Boolean,
+    onToggle: (Boolean) -> Unit,
+) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(start = 16.dp, end = 16.dp, bottom = 16.dp),
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(
+                painter = painterResource(R.drawable.ic_auto_awesome),
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary,
+            )
+            Spacer(Modifier.width(12.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = "Reconstruct magic link",
+                    style = MaterialTheme.typography.titleMedium,
+                )
+                Text(
+                    text = "Best-effort: rebuilds a new video's link from the channel + title via " +
+                        "YouTube's public feed. Heuristic — it won't always work, and only applies " +
+                        "to new-video notifications.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 4.dp),
+                )
+            }
+            Spacer(Modifier.width(12.dp))
+            Switch(checked = enabled, onCheckedChange = onToggle)
         }
     }
 }

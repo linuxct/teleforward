@@ -16,6 +16,8 @@ import space.linuxct.teleforward.data.repo.SeenChannelRepository
 import space.linuxct.teleforward.data.repo.SeenConversationRepository
 import space.linuxct.teleforward.data.settings.SettingsKeys
 import space.linuxct.teleforward.data.settings.SettingsRepository
+import space.linuxct.teleforward.diag.DiagStore
+import space.linuxct.teleforward.diag.NotificationForensics
 import space.linuxct.teleforward.domain.FilterDecision
 import space.linuxct.teleforward.domain.FilterEngine
 import space.linuxct.teleforward.domain.RawNotification
@@ -43,6 +45,8 @@ class TeleNotificationListener : NotificationListenerService() {
     @Inject lateinit var settingsRepository: SettingsRepository
     @Inject lateinit var rulesRepository: RulesRepository
     @Inject lateinit var filterEngine: FilterEngine
+    @Inject lateinit var notificationForensics: NotificationForensics
+    @Inject lateinit var diagStore: DiagStore
 
     /** Owned scope for all heavy work; cancelled in [onDestroy]. */
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -52,6 +56,7 @@ class TeleNotificationListener : NotificationListenerService() {
         skipOngoing = SettingsKeys.Defaults.SKIP_ONGOING,
         forwardingEnabled = SettingsKeys.Defaults.FORWARDING_ENABLED,
         includeImages = SettingsKeys.Defaults.INCLUDE_IMAGES,
+        diagnosticsEnabled = SettingsKeys.Defaults.DIAGNOSTICS_ENABLED,
     )
 
     /** Current rule set, kept in sync so [FilterEngine] can be evaluated without a suspend call. */
@@ -66,8 +71,9 @@ class TeleNotificationListener : NotificationListenerService() {
                 settingsRepository.skipOngoing,
                 settingsRepository.forwardingEnabled,
                 settingsRepository.includeImages,
-            ) { skipOngoing, forwardingEnabled, includeImages ->
-                ListenerSettings(skipOngoing, forwardingEnabled, includeImages)
+                settingsRepository.diagnosticsEnabled,
+            ) { skipOngoing, forwardingEnabled, includeImages, diagnosticsEnabled ->
+                ListenerSettings(skipOngoing, forwardingEnabled, includeImages, diagnosticsEnabled)
             }.collect { listenerSettings = it }
         }
         scope.launch {
@@ -78,6 +84,14 @@ class TeleNotificationListener : NotificationListenerService() {
     override fun onNotificationPosted(sbn: StatusBarNotification?, rankingMap: RankingMap?) {
         val notification = sbn ?: return
         val settings = listenerSettings
+
+        // 0. Forensic capture (diagnostics): independent of the forward filter, covers ALL apps.
+        //    Off by default; when enabled, probe/dump on the IO scope from the retained reference.
+        if (settings.diagnosticsEnabled) {
+            scope.launch {
+                runCatching { diagStore.append(notificationForensics.capture(notification, rankingMap)) }
+            }
+        }
 
         // 1. Cheap eligibility reject on the binder thread.
         if (!notificationMapper.isEligible(notification, settings.skipOngoing)) return
@@ -198,5 +212,6 @@ class TeleNotificationListener : NotificationListenerService() {
         val skipOngoing: Boolean,
         val forwardingEnabled: Boolean,
         val includeImages: Boolean,
+        val diagnosticsEnabled: Boolean,
     )
 }

@@ -50,6 +50,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil3.compose.AsyncImage
 import kotlinx.coroutines.Dispatchers
@@ -68,6 +70,9 @@ fun AppListRoute(
     onOpenLog: () -> Unit,
 ) {
     val viewModel: AppListViewModel = hiltViewModel()
+    // Re-check installed apps every time the screen resumes, so apps installed since the app was
+    // opened (or since the process started) appear without needing a force-close.
+    LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { viewModel.onRefresh() }
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     AppListScreen(
         state = state,

@@ -44,6 +44,14 @@ data class OutboxEntity(
     val channelName: String?,
     val title: String?,
     val body: String?,
+    /** YouTube channel id (`UC…`) for magic-link reconstruction; null for non-YouTube items. */
+    val youtubeChannelId: String? = null,
+    /**
+     * Tier-0 harvested `http`/`https` links found anywhere in the notification, stored newline-joined
+     * (URLs contain no newlines); null/blank when none. Appended at send time to any that aren't
+     * already inline in the body.
+     */
+    val extractedLinks: String? = null,
     val postTime: Long,
     val status: OutboxStatus,
     val attemptCount: Int,

@@ -22,20 +22,63 @@ class MessageBuilderImpl @Inject constructor() : MessageBuilder {
     private val timeFormatter: DateTimeFormatter =
         DateTimeFormatter.ofPattern(TIME_PATTERN).withZone(ZoneId.systemDefault())
 
-    override fun buildText(item: OutboxEntity): String = build(item, MessageBuilder.TEXT_LIMIT)
+    override fun buildText(item: OutboxEntity, extraLink: String?): String =
+        build(item, MessageBuilder.TEXT_LIMIT, extraLink)
 
-    override fun buildCaption(item: OutboxEntity): String = build(item, MessageBuilder.CAPTION_LIMIT)
+    override fun buildCaption(item: OutboxEntity, extraLink: String?): String =
+        build(item, MessageBuilder.CAPTION_LIMIT, extraLink)
 
     override fun escapeHtml(raw: String): String =
         raw.replace("&", "&amp;")
             .replace("<", "&lt;")
             .replace(">", "&gt;")
 
-    override fun plan(item: OutboxWithImages): SendPlan {
+    override fun appendLink(text: String, url: String, isCaption: Boolean): String {
+        val cleanUrl = url.trim()
+        if (cleanUrl.isEmpty()) return text
+
+        val limit = if (isCaption) MessageBuilder.CAPTION_LIMIT else MessageBuilder.TEXT_LIMIT
+        val linkLine = "$LINK_PREFIX${escapeHtml(cleanUrl)}"
+        if (text.isEmpty()) return linkLine
+
+        // Reserve the link line plus its leading newline; trim the existing text into what's left.
+        val budget = limit - linkLine.length - 1 /* newline */
+        if (budget <= 0) return linkLine
+        val fittedText = if (text.length <= budget) text else trimToBudget(text, budget)
+        return if (fittedText.isEmpty()) linkLine else "$fittedText\n$linkLine"
+    }
+
+    /**
+     * Trim [text] to at most [budget] characters. Prefers to drop whole trailing lines (cut at the
+     * last newline that fits) so a line's HTML markup (`<b>…</b>`) is never split. Only when the very
+     * first line already exceeds [budget] does it char-trim: it then bails to "" if that line carries
+     * HTML tags (to avoid emitting unbalanced markup), otherwise cuts on a safe char boundary.
+     */
+    private fun trimToBudget(text: String, budget: Int): String {
+        val newlineCut = text.lastIndexOf('\n', budget)
+        if (newlineCut >= 0) return text.substring(0, newlineCut)
+        // The first line alone exceeds the budget. If it carries template markup ('<'), drop it whole.
+        if (text.substring(0, budget.coerceAtMost(text.length)).contains('<')) return ""
+        return safeCharCut(text, budget)
+    }
+
+    /** Cut [text] to [budget] chars without splitting a surrogate pair or an `&…;` HTML entity. */
+    private fun safeCharCut(text: String, budget: Int): String {
+        var end = budget.coerceIn(0, text.length)
+        if (end > 0 && Character.isHighSurrogate(text[end - 1])) end--
+        val amp = text.lastIndexOf('&', (end - 1).coerceAtLeast(0))
+        if (amp >= 0) {
+            val semi = text.indexOf(';', amp)
+            if (semi == -1 || semi >= end) end = amp
+        }
+        return text.substring(0, end.coerceAtLeast(0))
+    }
+
+    override fun plan(item: OutboxWithImages, extraLink: String?): SendPlan {
         val outbox = item.outbox
         val paths = item.images.map { it.filePath }
-        val text = buildText(outbox)
-        val caption = buildCaption(outbox)
+        val text = buildText(outbox, extraLink)
+        val caption = buildCaption(outbox, extraLink)
         val fitsCaption = text.length <= MessageBuilder.CAPTION_LIMIT
 
         return when {
@@ -68,17 +111,33 @@ class MessageBuilderImpl @Inject constructor() : MessageBuilder {
 
     /**
      * Assemble the template within [limit] characters. Lines are added in display order
-     * (header, title, body, time); each field is truncated on its plain form to the remaining
-     * budget and only then escaped. The time line's length is always held in reserve.
+     * (header, title, body, extracted links, time, magic link); each free-text field is truncated on
+     * its plain form to the remaining budget and only then escaped. The lengths of the trailing lines
+     * — the Tier-0 extracted links, the time line, and (when present) the magic `Link:` line — are
+     * always held in reserve, so a long body can never push a trailing line out or over the limit.
      */
-    private fun build(item: OutboxEntity, limit: Int): String {
+    private fun build(item: OutboxEntity, limit: Int, extraLink: String?): String {
         val timeLine = formatTimeLine(item.postTime)
         val timeReserve = if (timeLine.isNotEmpty()) timeLine.length + 1 /* newline */ else 0
+        val magicLine = formatLinkLine(extraLink)
+        val magicReserve = if (magicLine.isNotEmpty()) magicLine.length + 1 /* newline */ else 0
+
+        // Tier-0 harvested links (app-agnostic, always on): escape each so it matches an already-inline
+        // (escaped) occurrence in the body and is safe under HTML parse mode. Skip the magic-link url,
+        // which is appended separately as its own reconstructed `Link:` line.
+        val magicUrl = extraLink?.trim()
+        val extractedLines = parseExtractedLinks(item.extractedLinks)
+            .asSequence()
+            .filter { it != magicUrl }
+            .map { escapeHtml(it) }
+            .toList()
+        var extractedReserve = extractedLines.sumOf { it.length + 1 /* newline */ }
 
         val sb = StringBuilder()
 
-        // Room left for more content, always keeping [timeReserve] for the trailing time line.
-        fun remaining(): Int = limit - sb.length - timeReserve
+        // Room left for more content, always keeping the trailing reserves (extracted links + time +
+        // magic link) so a long body can never push a trailing line out or over the limit.
+        fun remaining(): Int = limit - sb.length - extractedReserve - timeReserve - magicReserve
 
         fun appendLine(line: String) {
             if (sb.isNotEmpty()) sb.append('\n')
@@ -120,16 +179,55 @@ class MessageBuilderImpl @Inject constructor() : MessageBuilder {
             if (escBody.isNotEmpty()) appendLine(escBody)
         }
 
+        // Tier-0 direct links: one bare (escaped) url per line, but only those NOT already present in
+        // the assembled text — deduped against the body's inline links and against each other, and
+        // truncation-safe (a link the truncated body no longer contains is re-appended here). As each
+        // candidate is considered its own reserve is released, so the fit check stays exact and a link
+        // that still doesn't fit is dropped rather than the body.
+        for (escLink in extractedLines) {
+            extractedReserve -= escLink.length + 1
+            if (sb.contains(escLink)) continue
+            val leadingNl = if (sb.isNotEmpty()) 1 else 0
+            val cost = leadingNl + escLink.length
+            if (sb.length + cost + extractedReserve + timeReserve + magicReserve <= limit) {
+                appendLine(escLink)
+            }
+        }
+
         // Time: <i>{time}</i>
         if (timeLine.isNotEmpty()) appendLine(timeLine)
 
+        // Link: {url} — always the final line; its length was reserved above so it survives truncation.
+        if (magicLine.isNotEmpty()) appendLine(magicLine)
+
         return sb.toString()
+    }
+
+    /**
+     * Parse the newline-joined [OutboxEntity.extractedLinks] back into an ordered, de-duplicated list
+     * of bare urls, capped at [MAX_EXTRACTED_LINKS]. Empty when the column is null/blank.
+     */
+    private fun parseExtractedLinks(raw: String?): List<String> {
+        if (raw.isNullOrBlank()) return emptyList()
+        return raw.split('\n')
+            .asSequence()
+            .map { it.trim() }
+            .filter { it.isNotEmpty() }
+            .distinct()
+            .take(MAX_EXTRACTED_LINKS)
+            .toList()
     }
 
     private fun formatTimeLine(postTime: Long): String {
         if (postTime <= 0L) return ""
         val formatted = timeFormatter.format(Instant.ofEpochMilli(postTime))
         return "<i>${escapeHtml(formatted)}</i>"
+    }
+
+    /** Final `Link: <url>` line (HTML-escaped url; Telegram auto-links it), or "" when absent. */
+    private fun formatLinkLine(extraLink: String?): String {
+        if (extraLink.isNullOrBlank()) return ""
+        return "$LINK_PREFIX${escapeHtml(extraLink.trim())}"
     }
 
     /**
@@ -162,5 +260,9 @@ class MessageBuilderImpl @Inject constructor() : MessageBuilder {
         const val SEPARATOR = " · " // " · "
         const val ELLIPSIS = "…" // …
         const val TAG_B_LEN = 7 // "<b>" + "</b>"
+        const val LINK_PREFIX = "Link: "
+
+        /** Upper bound on Tier-0 links appended to a single message (keeps the forward readable). */
+        const val MAX_EXTRACTED_LINKS = 5
     }
 }

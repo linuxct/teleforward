@@ -11,9 +11,11 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import space.linuxct.teleforward.data.link.YouTube
 import space.linuxct.teleforward.data.repo.AppCatalogRepository
 import space.linuxct.teleforward.data.repo.RulesRepository
 import space.linuxct.teleforward.data.repo.SeenConversationRepository
+import space.linuxct.teleforward.data.settings.SettingsRepository
 import space.linuxct.teleforward.domain.RuleMode
 import space.linuxct.teleforward.domain.SeenChannel
 import space.linuxct.teleforward.domain.SeenConversation
@@ -50,6 +52,10 @@ data class ChannelPickerUiState(
     val wholeAppEnabled: Boolean = false,
     val channels: List<ChannelRowUi> = emptyList(),
     val conversations: List<ConversationRowUi> = emptyList(),
+    /** True only for supported YouTube apps: gates the magic-link reconstruction card. */
+    val magicLinkSupported: Boolean = false,
+    /** Magic-link toggle state (default ON for supported apps until explicitly opted out). */
+    val magicLinkEnabled: Boolean = true,
 )
 
 /**
@@ -63,6 +69,7 @@ class ChannelPickerViewModel @Inject constructor(
     private val appCatalogRepository: AppCatalogRepository,
     private val rulesRepository: RulesRepository,
     private val seenConversationRepository: SeenConversationRepository,
+    private val settingsRepository: SettingsRepository,
 ) : ViewModel() {
 
     private val packageName: String =
@@ -78,8 +85,9 @@ class ChannelPickerViewModel @Inject constructor(
         rulesRepository.observeRulesForPackage(packageName),
         seenConversationRepository.observeForPackage(packageName),
         appLabel,
-    ) { channels, rules, conversations, label ->
-        buildState(channels, rules, conversations, label)
+        settingsRepository.magicLinkDisabledPackages,
+    ) { channels, rules, conversations, label, magicLinkDisabled ->
+        buildState(channels, rules, conversations, label, magicLinkDisabled)
     }.stateIn(
         scope = viewModelScope,
         started = SharingStarted.WhileSubscribed(5_000),
@@ -117,11 +125,19 @@ class ChannelPickerViewModel @Inject constructor(
         }
     }
 
+    /** Magic-link toggle: opt this app in/out of link reconstruction (default on for YouTube apps). */
+    fun onToggleMagicLink(enabled: Boolean) {
+        viewModelScope.launch {
+            settingsRepository.setMagicLinkEnabled(packageName, enabled)
+        }
+    }
+
     private fun buildState(
         channels: List<SeenChannel>,
         rules: List<SelectionRule>,
         conversations: List<SeenConversation>,
         label: String,
+        magicLinkDisabled: Set<String>,
     ): ChannelPickerUiState {
         val wholeAppEnabled = rules.any {
             it.channelId == null && it.conversationId == null &&
@@ -141,6 +157,10 @@ class ChannelPickerViewModel @Inject constructor(
                 )
             }
             .sortedByDescending { it.lastSeen }
+            // The same channelId can be seen under multiple user profiles (userSerial); rules are
+            // keyed by (package, channelId), so collapse duplicates — this also keeps the row keys
+            // unique (a duplicate LazyColumn key crashes the screen).
+            .distinctBy { it.channelId }
 
         val conversationRows = conversations
             .map { conversation ->
@@ -157,6 +177,7 @@ class ChannelPickerViewModel @Inject constructor(
                 )
             }
             .sortedByDescending { it.lastSeen }
+            .distinctBy { it.conversationId }
 
         return ChannelPickerUiState(
             loading = false,
@@ -165,6 +186,8 @@ class ChannelPickerViewModel @Inject constructor(
             wholeAppEnabled = wholeAppEnabled,
             channels = channelRows,
             conversations = conversationRows,
+            magicLinkSupported = packageName in YouTube.PACKAGES,
+            magicLinkEnabled = packageName !in magicLinkDisabled,
         )
     }
 }

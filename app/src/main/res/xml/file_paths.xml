@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Exposes only filesDir/diag/ (the diagnostics dumps) to the FileProvider for share-sheet export. -->
+<paths>
+    <files-path
+        name="diag"
+        path="diag/" />
+</paths>

@@ -40,6 +40,11 @@ class IntakeRepositoryImpl @Inject constructor(
             channelName = notification.channelName,
             title = notification.title,
             body = notification.body,
+            youtubeChannelId = notification.youtubeChannelId,
+            // Store the harvested links newline-joined (URLs contain no newlines); null when none.
+            extractedLinks = notification.extractedLinks
+                .takeIf { it.isNotEmpty() }
+                ?.joinToString("\n"),
             postTime = notification.postTime,
             status = OutboxStatus.PENDING,
             attemptCount = 0,

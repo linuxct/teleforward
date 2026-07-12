@@ -22,6 +22,11 @@ package space.linuxct.teleforward.domain
  * @property imagePaths absolute file paths of images already persisted to app-private cache.
  * @property key StatusBarNotification.key (stable identity of the posted notification).
  * @property dedupeKey local idempotency key: `key + hash(title + body + imageCount)`.
+ * @property youtubeChannelId best-effort YouTube channel id (`UC…`) extracted from a supported
+ *   YouTube app's notification, used later for "magic link" reconstruction; null otherwise.
+ * @property extractedLinks Tier-0 harvest of every real `http`/`https` link found anywhere in the
+ *   notification's readable content (text lines, all MessagingStyle messages, URLSpans, …), so a
+ *   link is forwarded even when it lives in a field we don't otherwise surface. Empty when none.
  */
 data class RawNotification(
     val packageName: String,
@@ -36,4 +41,6 @@ data class RawNotification(
     val imagePaths: List<String>,
     val key: String,
     val dedupeKey: String,
+    val youtubeChannelId: String? = null,
+    val extractedLinks: List<String> = emptyList(),
 )

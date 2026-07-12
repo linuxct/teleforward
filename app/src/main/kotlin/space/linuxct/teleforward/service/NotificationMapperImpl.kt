@@ -12,11 +12,14 @@ import android.os.Bundle
 import android.service.notification.NotificationListenerService
 import android.service.notification.NotificationListenerService.RankingMap
 import android.service.notification.StatusBarNotification
+import android.text.Spanned
+import android.text.style.URLSpan
 import androidx.core.app.NotificationCompat
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import space.linuxct.teleforward.data.db.entity.OutboxImageKind
+import space.linuxct.teleforward.data.link.YouTube
 import space.linuxct.teleforward.domain.RawNotification
 import java.io.File
 import java.io.FileOutputStream
@@ -248,7 +251,72 @@ class NotificationMapperImpl @Inject constructor(
             imagePaths = imagePaths,
             key = sbn.key,
             dedupeKey = "${sbn.key}:${stableHash(fingerprint)}",
+            youtubeChannelId = extractYoutubeChannelId(sbn),
+            extractedLinks = extractLinks(sbn),
         )
+    }
+
+    /**
+     * Tier-0 link harvest (app-agnostic, always on): flatten every readable text field of the
+     * notification into plain strings plus any `URLSpan` urls (link-behind-text), then let the pure
+     * [LinkHarvest] keep only the deduped `http`/`https` links. Fully try/caught — harvesting a link
+     * must never break notification capture.
+     */
+    private fun extractLinks(sbn: StatusBarNotification): List<String> = try {
+        val notification = sbn.notification
+        val extras = notification.extras
+        val texts = ArrayList<CharSequence?>()
+        val spanUrls = ArrayList<String?>()
+
+        fun add(cs: CharSequence?) {
+            if (cs.isNullOrEmpty()) return
+            texts += cs
+            if (cs is Spanned) {
+                runCatching {
+                    for (span in cs.getSpans(0, cs.length, URLSpan::class.java)) {
+                        spanUrls += span.url
+                    }
+                }
+            }
+        }
+
+        add(extras.getCharSequence(Notification.EXTRA_TITLE))
+        add(extras.getCharSequence(Notification.EXTRA_TEXT))
+        add(extras.getCharSequence(Notification.EXTRA_BIG_TEXT))
+        add(extras.getCharSequence(Notification.EXTRA_SUB_TEXT))
+        add(extras.getCharSequence(Notification.EXTRA_SUMMARY_TEXT))
+        add(extras.getCharSequence(Notification.EXTRA_INFO_TEXT))
+        // InboxStyle text lines — often where the real links hide behind a summary android.text.
+        extras.getCharSequenceArray(Notification.EXTRA_TEXT_LINES)?.forEach { add(it) }
+        // Every MessagingStyle message (all of them, not just the latest we forward as the body).
+        runCatching {
+            NotificationCompat.MessagingStyle
+                .extractMessagingStyleFromNotification(notification)
+                ?.messages
+                ?.forEach { add(it.text) }
+        }
+        add(notification.tickerText)
+
+        LinkHarvest.harvest(texts, spanUrls)
+    } catch (t: Throwable) {
+        emptyList()
+    }
+
+    /**
+     * Best-effort YouTube channel id (`UC…`) for a supported YouTube app, from `chime.slot_key`
+     * (preferred) or `sbn.tag`. Fully try/caught: extraction must never break notification capture.
+     */
+    private fun extractYoutubeChannelId(sbn: StatusBarNotification): String? = try {
+        if (sbn.packageName in YouTube.PACKAGES) {
+            YouTube.extractChannelId(
+                chimeSlotKey = sbn.notification.extras.getString("chime.slot_key"),
+                tag = sbn.tag,
+            )
+        } else {
+            null
+        }
+    } catch (t: Throwable) {
+        null
     }
 
     // --- content helpers -----------------------------------------------------------------------

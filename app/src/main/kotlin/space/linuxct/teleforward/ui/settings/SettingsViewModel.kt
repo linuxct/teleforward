@@ -1,16 +1,19 @@
 package space.linuxct.teleforward.ui.settings
 
 import android.content.Context
+import android.content.Intent
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.onEach
+import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import space.linuxct.teleforward.data.repo.OutboxRepository
@@ -22,6 +25,8 @@ import space.linuxct.teleforward.data.telegram.SendResult
 import space.linuxct.teleforward.data.telegram.TokenValidation
 import space.linuxct.teleforward.data.update.UpdateRepository
 import space.linuxct.teleforward.data.update.UpdateResult
+import space.linuxct.teleforward.diag.DiagExporter
+import space.linuxct.teleforward.diag.DiagStore
 import space.linuxct.teleforward.util.NotificationAccess
 import javax.inject.Inject
 
@@ -35,6 +40,12 @@ sealed interface ActionState {
     data class Success(val message: String) : ActionState
     data class Error(val message: String) : ActionState
 }
+
+/**
+ * State of the diagnostics "Dump logs (share)" action. Shares [ActionState]'s Idle/Running/
+ * Success/Error shape (and its inline renderer), so it's an alias rather than a parallel type.
+ */
+typealias DumpState = ActionState
 
 /**
  * State of the "Check for updates" action in the About card. Distinct from [ActionState] because it
@@ -74,6 +85,10 @@ data class SettingsUiState(
     val maintenanceAction: ActionState = ActionState.Idle,
     // About / update check
     val updateState: UpdateCheckState = UpdateCheckState.Idle,
+    // Diagnostics (advanced)
+    val diagnosticsEnabled: Boolean = false,
+    val diagRecordCount: Int = 0,
+    val dumpState: DumpState = ActionState.Idle,
 ) {
     val paired: Boolean get() = chatId != null
 
@@ -105,16 +120,31 @@ class SettingsViewModel @Inject constructor(
     private val secretStore: SecretStore,
     private val outboxRepository: OutboxRepository,
     private val updateRepository: UpdateRepository,
+    private val diagStore: DiagStore,
+    private val diagExporter: DiagExporter,
 ) : ViewModel() {
 
     private val _state = MutableStateFlow(SettingsUiState())
     val state: StateFlow<SettingsUiState> = _state.asStateFlow()
 
+    /**
+     * One-shot share-sheet intents emitted by [dumpDiagnostics]. The VM never starts activities
+     * itself; [SettingsRoute] collects this and fires each intent through its `launchSafely` path.
+     */
+    private val _shareIntents = Channel<Intent>(Channel.BUFFERED)
+    val shareIntents: Flow<Intent> = _shareIntents.receiveAsFlow()
+
     init {
-        // One-shot fill for the initial render + token presence, then flip loading off.
+        // One-shot fill for the initial render + token presence + diag status, then flip loading off.
         viewModelScope.launch {
             val tokenSet = secretStore.hasToken()
-            _state.update { it.copy(loading = false, tokenSet = tokenSet) }
+            _state.update {
+                it.copy(
+                    loading = false,
+                    tokenSet = tokenSet,
+                )
+            }
+            loadDiagCount()
         }
         // Reactive mirrors: keep the mutable slices live as DataStore / pairing writes land.
         settings.chatId.bind { s, v -> s.copy(chatId = v) }
@@ -125,6 +155,7 @@ class SettingsViewModel @Inject constructor(
         settings.wifiOnly.bind { s, v -> s.copy(wifiOnly = v) }
         settings.skipOngoing.bind { s, v -> s.copy(skipOngoing = v) }
         settings.outboxExpiryHours.bind { s, v -> s.copy(outboxExpiryHours = v) }
+        settings.diagnosticsEnabled.bind { s, v -> s.copy(diagnosticsEnabled = v) }
         refreshListenerHealth()
     }
 
@@ -289,6 +320,53 @@ class SettingsViewModel @Inject constructor(
             }
             _state.update { it.copy(updateState = next) }
         }
+    }
+
+    // endregion
+
+    // region Diagnostics (advanced)
+
+    /** Toggle forensic capture on/off; the listener reads this flag reactively. */
+    fun setDiagnosticsEnabled(enabled: Boolean) =
+        launchSetter { settings.setDiagnosticsEnabled(enabled) }
+
+    /**
+     * Build the diagnostics dump off the main thread and, on success, emit the share-sheet [Intent]
+     * as a one-shot event for [SettingsRoute] to fire. Reports the outcome inline via [DumpState].
+     */
+    fun dumpDiagnostics() {
+        _state.update { it.copy(dumpState = ActionState.Running) }
+        viewModelScope.launch {
+            runCatching { diagExporter.exportToShareIntent() }.fold(
+                onSuccess = { intent ->
+                    _shareIntents.send(intent)
+                    _state.update {
+                        it.copy(dumpState = ActionState.Success("Dump ready — choose where to share"))
+                    }
+                },
+                onFailure = { error ->
+                    _state.update {
+                        it.copy(dumpState = ActionState.Error(error.message ?: "Couldn't build the dump"))
+                    }
+                },
+            )
+            loadDiagCount()
+        }
+    }
+
+    /** Delete every captured forensic record, then refresh the displayed count. */
+    fun clearDiagnostics() {
+        viewModelScope.launch {
+            diagStore.clear()
+            loadDiagCount()
+            _state.update { it.copy(dumpState = ActionState.Idle) }
+        }
+    }
+
+    /** Read the current record count into the UI state (suspend; used on load and after actions). */
+    private suspend fun loadDiagCount() {
+        val count = diagStore.count()
+        _state.update { it.copy(diagRecordCount = count) }
     }
 
     // endregion

@@ -9,6 +9,7 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import dagger.hilt.components.SingletonComponent
 import space.linuxct.teleforward.data.db.TeleForwardDatabase
 import space.linuxct.teleforward.data.db.dao.OutboxDao
+import space.linuxct.teleforward.data.db.dao.PendingLinkResolutionDao
 import space.linuxct.teleforward.data.db.dao.RulesDao
 import space.linuxct.teleforward.data.db.dao.SeenChannelDao
 import space.linuxct.teleforward.data.db.dao.SeenConversationDao
@@ -28,7 +29,12 @@ object DatabaseModule {
         )
             // Real migration preserves existing user selections; destructive fallback stays as a
             // last-resort safety net only (the migration should make it unnecessary).
-            .addMigrations(TeleForwardDatabase.MIGRATION_1_2)
+            .addMigrations(
+                TeleForwardDatabase.MIGRATION_1_2,
+                TeleForwardDatabase.MIGRATION_2_3,
+                TeleForwardDatabase.MIGRATION_3_4,
+                TeleForwardDatabase.MIGRATION_4_5,
+            )
             .fallbackToDestructiveMigration(dropAllTables = true)
             .build()
 
@@ -45,4 +51,8 @@ object DatabaseModule {
 
     @Provides
     fun provideOutboxDao(database: TeleForwardDatabase): OutboxDao = database.outboxDao()
+
+    @Provides
+    fun providePendingLinkResolutionDao(database: TeleForwardDatabase): PendingLinkResolutionDao =
+        database.pendingLinkResolutionDao()
 }

@@ -39,8 +39,21 @@ sealed interface SendPlan {
  */
 sealed interface SendResult {
 
-    /** 2xx — delivered. [messageIds] are the resulting Telegram message ids. */
-    data class Success(val messageIds: List<Long>) : SendResult
+    /**
+     * 2xx — delivered. [messageIds] are the resulting Telegram message ids.
+     *
+     * The `editable*` fields point at the single message that carries the body/caption (where a
+     * later `Link:` line would go) so the magic-link retry can edit it: [editableMessageId] is that
+     * message's id, [editableIsCaption] whether it is a caption (vs message text), and [editableText]
+     * the exact caption/text that was sent WITHOUT any magic link. All three are null/false when
+     * there is no clean single editable target, in which case the retry is skipped.
+     */
+    data class Success(
+        val messageIds: List<Long>,
+        val editableMessageId: Long? = null,
+        val editableIsCaption: Boolean = false,
+        val editableText: String? = null,
+    ) : SendResult
 
     /** 429 — honor `parameters.retry_after`; the caller should retry after [seconds]. */
     data class RetryAfter(val seconds: Long) : SendResult

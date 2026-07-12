@@ -16,6 +16,12 @@ interface AppCatalogRepository {
     /** Reactive union of seen apps + installed apps for the app list. */
     fun observeCatalog(): Flow<List<AppInfo>>
 
+    /**
+     * Invalidate the cached installed-apps list and force [observeCatalog] to re-emit. Call when the
+     * app is (re)opened so apps installed since the process started show up without a force-close.
+     */
+    fun refresh()
+
     suspend fun getAppInfo(packageName: String): AppInfo?
 
     /** Resolve a human-readable label for [packageName] (cached). */
