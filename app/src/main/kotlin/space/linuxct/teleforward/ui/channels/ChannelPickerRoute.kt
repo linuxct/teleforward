@@ -5,7 +5,11 @@
 
 package space.linuxct.teleforward.ui.channels
 
+import android.Manifest
+import android.content.pm.PackageManager
 import android.text.format.DateUtils
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -22,6 +26,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Notifications
+import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
@@ -32,14 +37,21 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import space.linuxct.teleforward.R
+import space.linuxct.teleforward.data.link.MagicLinkKind
+import space.linuxct.teleforward.data.link.magicLinkKind
 import space.linuxct.teleforward.designsystem.AppScaffold
 import space.linuxct.teleforward.designsystem.SectionHeader
 
@@ -98,6 +110,11 @@ private fun ChannelPickerScreen(
                         onToggle = onToggleMagicLink,
                     )
                 }
+            }
+            // WhatsApp-only: the opt-in Contacts affordance that upgrades saved-contact (`@lid`) chats
+            // — which hide the phone number — into WhatsApp Web links. Shown only while magic link is on.
+            if (state.magicLinkEnabled && magicLinkKind(state.packageName) == MagicLinkKind.WHATSAPP) {
+                item { WhatsAppContactsCard() }
             }
             item { PrecedenceExplainer() }
             item { SectionHeader("Channels") }
@@ -183,6 +200,60 @@ private fun MagicLinkCard(
             }
             Spacer(Modifier.width(12.dp))
             Switch(checked = enabled, onCheckedChange = onToggle)
+        }
+    }
+}
+
+@Composable
+private fun WhatsAppContactsCard() {
+    val context = LocalContext.current
+    var granted by remember {
+        mutableStateOf(
+            ContextCompat.checkSelfPermission(context, Manifest.permission.READ_CONTACTS) ==
+                PackageManager.PERMISSION_GRANTED,
+        )
+    }
+    val launcher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission(),
+    ) { isGranted -> granted = isGranted }
+
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(start = 16.dp, end = 16.dp, bottom = 16.dp),
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = "Resolve saved contacts",
+                    style = MaterialTheme.typography.titleMedium,
+                )
+                Text(
+                    text = "WhatsApp hides phone numbers behind an internal ID, so chats with saved " +
+                        "contacts can't be linked without Contacts access. Grant it to turn those into " +
+                        "links — the number stays on your device except inside the link you forward.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 4.dp),
+                )
+            }
+            Spacer(Modifier.width(12.dp))
+            if (granted) {
+                Text(
+                    text = "Granted",
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.primary,
+                )
+            } else {
+                Button(onClick = { launcher.launch(Manifest.permission.READ_CONTACTS) }) {
+                    Text("Grant")
+                }
+            }
         }
     }
 }

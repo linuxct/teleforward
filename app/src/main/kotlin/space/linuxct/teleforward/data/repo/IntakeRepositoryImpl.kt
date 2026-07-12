@@ -40,6 +40,8 @@ class IntakeRepositoryImpl @Inject constructor(
             channelName = notification.channelName,
             title = notification.title,
             body = notification.body,
+            conversationId = notification.conversationId,
+            senderContactUri = notification.senderContactUri,
             youtubeChannelId = notification.youtubeChannelId,
             // Store the harvested links newline-joined (URLs contain no newlines); null when none.
             extractedLinks = notification.extractedLinks

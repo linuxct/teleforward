@@ -26,7 +26,7 @@ import space.linuxct.teleforward.data.db.entity.SelectionRuleEntity
         OutboxImageEntity::class,
         PendingLinkResolutionEntity::class,
     ],
-    version = 5,
+    version = 6,
     exportSchema = false,
 )
 @TypeConverters(Converters::class)
@@ -127,6 +127,19 @@ abstract class TeleForwardDatabase : RoomDatabase() {
                         "`index_pending_link_resolution_nextAttemptAt` " +
                         "ON `pending_link_resolution` (`nextAttemptAt`)",
                 )
+            }
+        }
+
+        /**
+         * v5 → v6: adds two nullable `outbox` columns backing WhatsApp magic-link reconstruction —
+         * `conversationId` (the chat shortcut id, e.g. `…@s.whatsapp.net` / `…@lid`) and
+         * `senderContactUri` (the 1:1 sender's `content://com.android.contacts/…` uri). Existing rows
+         * keep `NULL` (non-conversation / pre-feature), so all queued items survive.
+         */
+        val MIGRATION_5_6 = object : Migration(5, 6) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `outbox` ADD COLUMN `conversationId` TEXT")
+                db.execSQL("ALTER TABLE `outbox` ADD COLUMN `senderContactUri` TEXT")
             }
         }
     }

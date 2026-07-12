@@ -246,6 +246,7 @@ class NotificationMapperImpl @Inject constructor(
             conversationId = conversationId,
             title = content.title,
             body = content.body,
+            senderContactUri = extractSenderContactUri(sbn),
             postTime = sbn.postTime,
             userSerial = resolveUserSerial(context, sbn.user),
             imagePaths = imagePaths,
@@ -254,6 +255,22 @@ class NotificationMapperImpl @Inject constructor(
             youtubeChannelId = extractYoutubeChannelId(sbn),
             extractedLinks = extractLinks(sbn),
         )
+    }
+
+    /**
+     * The message sender's contact uri for a **1:1** MessagingStyle chat — the latest message's
+     * `Person.getUri()` (a `content://com.android.contacts/…` lookup uri for a saved contact). This is
+     * the only recovery path for current-WhatsApp `@lid` chats (which hide the phone number). Null for
+     * group chats (where the per-message sender isn't the chat) or when no such uri is present. Fully
+     * try/caught — it must never break capture; it reads only the uri string, never contacts data.
+     */
+    private fun extractSenderContactUri(sbn: StatusBarNotification): String? {
+        val style = runCatching {
+            NotificationCompat.MessagingStyle.extractMessagingStyleFromNotification(sbn.notification)
+        }.getOrNull() ?: return null
+        if (style.isGroupConversation) return null
+        return style.messages.asReversed()
+            .firstNotNullOfOrNull { it.person?.uri?.takeUnless { uri -> uri.isBlank() } }
     }
 
     /**

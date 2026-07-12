@@ -44,6 +44,18 @@ data class OutboxEntity(
     val channelName: String?,
     val title: String?,
     val body: String?,
+    /**
+     * Conversation shortcut id (WhatsApp/Messages-style per-chat identity, e.g. a WhatsApp
+     * `…@s.whatsapp.net` / `…@lid`); null for non-conversation items. Used by WhatsApp magic-link
+     * reconstruction (a phone-JID yields the number directly).
+     */
+    val conversationId: String? = null,
+    /**
+     * The message sender's contact uri (`content://com.android.contacts/…`) when the notification is a
+     * 1:1 MessagingStyle conversation; null otherwise. Lets the opt-in WhatsApp resolver recover a
+     * saved contact's phone (for `@lid` chats that hide the number). Never contains the number itself.
+     */
+    val senderContactUri: String? = null,
     /** YouTube channel id (`UC…`) for magic-link reconstruction; null for non-YouTube items. */
     val youtubeChannelId: String? = null,
     /**

@@ -48,7 +48,15 @@ data class SearchVideo(val videoId: String, val title: String, val channelId: St
  * throws into the delivery worker.
  */
 @Singleton
-class LinkResolverImpl @Inject constructor() : LinkResolver {
+class LinkResolverImpl @Inject constructor(
+    private val contactPhoneResolver: ContactPhoneResolver,
+) : LinkResolver {
+
+    /**
+     * Test-only convenience: constructs with no contacts resolution (the no-op resolver). NOT
+     * `@Inject` — Hilt uses only the primary constructor above and injects the real binding.
+     */
+    constructor() : this(NoopContactPhoneResolver)
 
     /** Dedicated, interceptor-free client with short timeouts (must NOT reuse the Telegram client). */
     private val http: OkHttpClient by lazy {
@@ -83,7 +91,9 @@ class LinkResolverImpl @Inject constructor() : LinkResolver {
 
             kind == MagicLinkKind.YOUTUBE -> reconstruct(item)
 
-            else -> reconstructAppleMusic(item)
+            kind == MagicLinkKind.APPLE_MUSIC -> reconstructAppleMusic(item)
+
+            else -> reconstructWhatsApp(item)
         }
     } catch (t: Throwable) {
         // Absolutely never let magic-link resolution surface an error into the send path.
@@ -217,6 +227,57 @@ class LinkResolverImpl @Inject constructor() : LinkResolver {
                 }
             }
         }
+    }
+
+    /**
+     * WhatsApp reconstruction → a `web.whatsapp.com/send/` url (opens the chat directly in WhatsApp
+     * Web/desktop). Tries, in
+     * order: an individual phone-JID identifier, an unsaved contact's phone-shaped title (both
+     * permission-free), then — only if the user opted into Contacts access — the sender's saved
+     * contact behind its lookup uri. LIDs and groups yield no phone → NO_MATCH (no `Link:` line). No
+     * network, and the trace omits the number/url (PII; diagnostics are shareable).
+     */
+    private fun reconstructWhatsApp(item: OutboxEntity): MagicLinkResult {
+        val jidPhone = WhatsApp.phoneFromJid(item.conversationId)
+        val (phone, source) = when {
+            jidPhone != null -> jidPhone to WhatsApp.SOURCE_JID
+            else -> {
+                val titlePhone = WhatsApp.phoneFromTitle(item.title)
+                if (titlePhone != null) {
+                    titlePhone to WhatsApp.SOURCE_TITLE
+                } else {
+                    val uri = item.senderContactUri
+                    val contactPhone = if (uri != null) contactPhoneResolver.resolve(uri) else null
+                    if (contactPhone != null) contactPhone to WhatsApp.SOURCE_CONTACTS else null to null
+                }
+            }
+        }
+
+        return if (phone != null) {
+            MagicLinkResult(
+                WhatsApp.chatUrl(phone),
+                MagicLinkTrace(
+                    outcome = MagicLinkOutcome.MATCHED,
+                    service = WhatsApp.SERVICE,
+                    source = source,
+                ),
+            )
+        } else {
+            MagicLinkResult(
+                null,
+                MagicLinkTrace(
+                    outcome = MagicLinkOutcome.NO_MATCH,
+                    service = WhatsApp.SERVICE,
+                    error = whatsAppMissReason(item),
+                ),
+            )
+        }
+    }
+
+    /** PII-free reason a WhatsApp reconstruction found no phone (records the id KIND, never its value). */
+    private fun whatsAppMissReason(item: OutboxEntity): String {
+        val idKind = item.conversationId?.substringAfterLast('@', "")?.takeUnless { it.isBlank() } ?: "none"
+        return "no phone (id=@$idKind, contactUri=${item.senderContactUri != null})"
     }
 
     /**

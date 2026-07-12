@@ -7,6 +7,9 @@ enum class MagicLinkKind {
 
     /** Apple Music now-playing notifications → `music.apple.com` song url (via the iTunes Search API). */
     APPLE_MUSIC,
+
+    /** WhatsApp chat notifications → a `web.whatsapp.com/send/` url (from a phone JID/title/contact). */
+    WHATSAPP,
 }
 
 /**
@@ -17,5 +20,6 @@ enum class MagicLinkKind {
 fun magicLinkKind(packageName: String): MagicLinkKind? = when (packageName) {
     in YouTube.PACKAGES -> MagicLinkKind.YOUTUBE
     in AppleMusic.PACKAGES -> MagicLinkKind.APPLE_MUSIC
+    in WhatsApp.PACKAGES -> MagicLinkKind.WHATSAPP
     else -> null
 }

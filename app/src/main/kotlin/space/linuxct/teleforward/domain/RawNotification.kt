@@ -17,6 +17,8 @@ package space.linuxct.teleforward.domain
  *   channel ("Messages") and distinguish chats by this id.
  * @property title notification title (EXTRA_TITLE), or null.
  * @property body notification body (EXTRA_BIG_TEXT preferred, else EXTRA_TEXT), or null.
+ * @property senderContactUri the message sender's contact uri (`content://com.android.contacts/…`)
+ *   for a 1:1 MessagingStyle conversation, or null. Backs the opt-in WhatsApp contact→phone resolver.
  * @property postTime StatusBarNotification.postTime (epoch millis).
  * @property userSerial serial number of the posting user/profile (multi-user / work profile aware).
  * @property imagePaths absolute file paths of images already persisted to app-private cache.
@@ -36,6 +38,7 @@ data class RawNotification(
     val conversationId: String?,
     val title: String?,
     val body: String?,
+    val senderContactUri: String? = null,
     val postTime: Long,
     val userSerial: Long,
     val imagePaths: List<String>,

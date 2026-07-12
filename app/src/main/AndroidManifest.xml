@@ -6,6 +6,13 @@
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
     <!--
+      Optional & strictly opt-in: only requested when the user enables "Resolve saved contacts" for
+      WhatsApp magic links (WhatsApp's `@lid` chats hide the phone number; the sender's saved-contact
+      lookup uri is the only way back to a web.whatsapp.com/send link). Never requested automatically.
+    -->
+    <uses-permission android:name="android.permission.READ_CONTACTS" />
+
+    <!--
       Package visibility (API 30+): allows PackageManager to enumerate other apps' launcher
       activities so AppCatalogRepository can list installed apps WITHOUT QUERY_ALL_PACKAGES.
     -->

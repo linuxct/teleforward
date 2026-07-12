@@ -16,6 +16,8 @@ import space.linuxct.teleforward.data.repo.SeenChannelRepository
 import space.linuxct.teleforward.data.repo.SeenChannelRepositoryImpl
 import space.linuxct.teleforward.data.repo.SeenConversationRepository
 import space.linuxct.teleforward.data.repo.SeenConversationRepositoryImpl
+import space.linuxct.teleforward.data.link.ContactPhoneResolver
+import space.linuxct.teleforward.data.link.ContactPhoneResolverImpl
 import space.linuxct.teleforward.data.link.LinkResolver
 import space.linuxct.teleforward.data.link.LinkResolverImpl
 import space.linuxct.teleforward.data.secret.KeystoreSecretStore
@@ -91,6 +93,10 @@ abstract class BindingsModule {
     @Binds
     @Singleton
     abstract fun bindLinkResolver(impl: LinkResolverImpl): LinkResolver
+
+    @Binds
+    @Singleton
+    abstract fun bindContactPhoneResolver(impl: ContactPhoneResolverImpl): ContactPhoneResolver
 
     @Binds
     @Singleton
