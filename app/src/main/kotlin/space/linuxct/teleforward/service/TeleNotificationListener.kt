@@ -24,6 +24,7 @@ import space.linuxct.teleforward.domain.FilterEngine
 import space.linuxct.teleforward.domain.RawNotification
 import space.linuxct.teleforward.domain.SelectionRule
 import space.linuxct.teleforward.domain.isMediaNotification
+import java.io.File
 import javax.inject.Inject
 
 /**
@@ -51,6 +52,7 @@ class TeleNotificationListener : NotificationListenerService() {
     @Inject lateinit var diagStore: DiagStore
     @Inject lateinit var actionGateway: NotificationActionGateway
     @Inject lateinit var nowPlayingController: NowPlayingController
+    @Inject lateinit var mediaDebouncer: MediaDispatchDebouncer
 
     /** Owned scope for all heavy work; cancelled in [onDestroy]. */
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -212,21 +214,32 @@ class TeleNotificationListener : NotificationListenerService() {
             )
             scope.launch {
                 runCatching {
-                    nowPlayingController.update(
-                        packageName = packageName,
-                        appLabel = notificationMapper.appLabel(packageName),
-                        notificationKey = notification.key,
-                        title = content.title,
-                        text = content.body,
-                        actions = actions,
-                        // On a media notification the large icon IS the album art. Extracted right
-                        // away (still the first thing this coroutine does) so the bitmap is read
-                        // while it is certainly valid, but only when the track actually changed —
-                        // media notifications re-post constantly and those need no artwork.
-                        albumArtPath = if (trackChanged) {
-                            notificationMapper.extractLargeIcon(notification, artCacheDir)
-                        } else {
-                            null
+                    // On a media notification the large icon IS the album art. Extracted right away
+                    // (the first thing this coroutine does) so the bitmap is read while it is
+                    // certainly valid, but only when the track actually changed — media notifications
+                    // re-post constantly and those need no artwork.
+                    val albumArtPath = if (trackChanged) {
+                        notificationMapper.extractLargeIcon(notification, artCacheDir)
+                    } else {
+                        null
+                    }
+                    val label = notificationMapper.appLabel(packageName)
+                    // Only the track you land on is worth a message. Skipping through five songs
+                    // would otherwise retire, re-send and re-pin five times over — five bursts of
+                    // Telegram calls for four messages that get deleted moments later.
+                    mediaDebouncer.submit(
+                        key = packageName,
+                        discard = { discardArtwork(albumArtPath) },
+                        action = {
+                            nowPlayingController.update(
+                                packageName = packageName,
+                                appLabel = label,
+                                notificationKey = notification.key,
+                                title = content.title,
+                                text = content.body,
+                                actions = actions,
+                                albumArtPath = albumArtPath,
+                            )
                         },
                     )
                 }
@@ -260,7 +273,19 @@ class TeleNotificationListener : NotificationListenerService() {
                     content = content,
                     imagePaths = images.map { it.filePath },
                 )
-                intakeRepository.enqueue(raw)
+                if (isMedia) {
+                    // Same reasoning as the now-playing branch: coalesce a skip-through into the one
+                    // track that was landed on. It also closes a race the merge alone couldn't — a
+                    // player announces a track with no art and re-posts ~50ms later carrying it, and
+                    // whichever arrives last within the window is the one that gets forwarded.
+                    mediaDebouncer.submit(
+                        key = packageName,
+                        discard = { images.forEach { discardArtwork(it.filePath) } },
+                        action = { intakeRepository.enqueue(raw) },
+                    )
+                } else {
+                    intakeRepository.enqueue(raw)
+                }
             }
         }
     }
@@ -281,6 +306,18 @@ class TeleNotificationListener : NotificationListenerService() {
         if (!isMedia) return
         val packageName = notification.packageName
         scope.launch { runCatching { nowPlayingController.clear(packageName) } }
+    }
+
+    /**
+     * Release artwork extracted for a media update that a newer one superseded.
+     *
+     * The extraction has to happen eagerly (the notification's bitmap may not survive the wait), so a
+     * coalesced update always leaves a file behind. Without this, skipping through an album would
+     * quietly fill the image cache with covers for tracks that were never forwarded.
+     */
+    private fun discardArtwork(path: String?) {
+        if (path == null) return
+        runCatching { File(path).delete() }
     }
 
     override fun onListenerConnected() {

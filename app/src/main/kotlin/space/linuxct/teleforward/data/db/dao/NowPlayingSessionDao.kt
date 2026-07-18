@@ -17,6 +17,13 @@ interface NowPlayingSessionDao {
     @Query("DELETE FROM now_playing_sessions WHERE sessionKey = :sessionKey")
     suspend fun delete(sessionKey: String)
 
+    /**
+     * Is this one of the control messages we posted? Lets a pin service notice be recognised as ours
+     * after a process restart, when the in-memory record of what was pinned is gone.
+     */
+    @Query("SELECT COUNT(*) FROM now_playing_sessions WHERE chatId = :chatId AND messageId = :messageId")
+    suspend fun countByMessage(chatId: Long, messageId: Long): Int
+
     /** Sessions older than [cutoff]; playback that ended without us noticing leaves one behind. */
     @Query("SELECT * FROM now_playing_sessions WHERE updatedAt <= :cutoff")
     suspend fun findStale(cutoff: Long): List<NowPlayingSessionEntity>

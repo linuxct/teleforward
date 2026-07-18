@@ -342,6 +342,13 @@ inbound poller as tracks change. That's a real battery cost, so it's yours to op
 > arrives underneath. TeleForward deletes the "pinned a message" notice Telegram posts for its own
 > pins, so the chat doesn't fill with them.
 
+**Skipping doesn't spam you.** Track changes are held for a second, and only the track you actually
+land on is forwarded — skip through half an album and you get one message, not twelve. This is why a
+deliberate track change takes about a second to appear. It also keeps TeleForward well inside
+Telegram's rate limits: each track costs several API calls (send, unpin, delete the previous, pin,
+tidy the pin notice), and hitting a limit would throttle the bot token for *everything*, ordinary
+notification forwards included.
+
 ### Limits worth knowing
 
 - **The notification must still be on the phone.** Once it's gone (read elsewhere, swiped, auto-cleared)
@@ -361,7 +368,9 @@ inbound poller as tracks change. That's a real battery cost, so it's yours to op
   accompanying text message instead.
 - Doze and OEM battery managers can delay polling.
 - While remote actions are on, the poller consumes Telegram updates — if you need to **re-pair**, turn
-  it off first so the pairing capture can see your message.
+  it off first so the pairing capture can see your message. Re-pairing no longer swallows a button
+  press you'd made but not yet had answered; the capture stops short of any pending press rather than
+  acknowledging the whole backlog.
 
 ## Security & privacy
 

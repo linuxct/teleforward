@@ -86,8 +86,17 @@ class RemoteActionDispatcher @Inject constructor(
             return
         }
 
+        // Three different things used to be reported as "Not authorised", which is only true for one
+        // of them. Telling someone their own press was unauthorised — when the real story is that the
+        // app is no longer paired — sends them looking for a security problem that isn't there.
         val chatId = query.message?.chat?.id
-        if (!isFromPairedChat(chatId)) {
+        val pairedChatId = settings.chatId.first()
+        if (chatId == null || pairedChatId == null || chatId != pairedChatId) {
+            val reason = when {
+                chatId == null -> "noChat"
+                pairedChatId == null -> "notPaired"
+                else -> "unauthorized"
+            }
             diag.callback(
                 tokenFound = false,
                 authorized = false,
@@ -95,9 +104,16 @@ class RemoteActionDispatcher @Inject constructor(
                 notificationKey = null,
                 actionIndex = null,
                 semantic = null,
-                outcome = "unauthorized",
+                outcome = reason,
             )
-            ack.answer("Not authorised", alert = true)
+            ack.answer(
+                when (reason) {
+                    "noChat" -> "Couldn't tell which chat that press came from"
+                    "notPaired" -> "TeleForward isn't paired with a chat — re-pair it in Settings"
+                    else -> "Not authorised"
+                },
+                alert = true,
+            )
             return
         }
         // Only now may we speak into this chat: it is the paired one.

@@ -1,6 +1,7 @@
 package space.linuxct.teleforward.data.telegram
 
 import space.linuxct.teleforward.data.db.dao.MediaForwardDao
+import space.linuxct.teleforward.data.db.dao.NowPlayingSessionDao
 import space.linuxct.teleforward.data.telegram.dto.TgMessage
 import space.linuxct.teleforward.util.BoundedCache
 import javax.inject.Inject
@@ -37,6 +38,7 @@ import javax.inject.Singleton
 class ChatPinner @Inject constructor(
     private val api: TelegramApi,
     private val mediaForwardDao: MediaForwardDao,
+    private val nowPlayingSessionDao: NowPlayingSessionDao,
 ) {
 
     /**
@@ -65,20 +67,23 @@ class ChatPinner @Inject constructor(
      *
      * @return true when it was ours and was handled, so the caller can skip further processing.
      *
-     * Ownership is checked twice over: an in-memory record of what this process pinned, and the
-     * `media_forwards` table, which survives a restart. A notice for a message the *user* pinned is
-     * never touched.
+     * Ownership is checked three ways: an in-memory record of what this process pinned, plus both
+     * tables that can own a pinned message — `media_forwards` for ordinary media forwards and
+     * `now_playing_sessions` for the live control. The two table lookups are what make this survive a
+     * process restart. A notice for a message the *user* pinned is never touched.
      *
      * Best-effort by nature — the notice can only be deleted while something is polling. It is not
      * lost if we are not: Telegram queues updates for 24h and a bot can delete a message for 48h, so
-     * a catch-up poll still tidies it. The only genuine miss is a pin whose notice arrives after the
-     * process died and that was never recorded in the database.
+     * a catch-up poll still tidies it.
      */
     suspend fun consumePinNotice(message: TgMessage): Boolean {
         val pinnedId = message.pinnedMessage?.messageId?.takeIf { it > 0L } ?: return false
         val chatId = message.chat.id
         val ours = pinnedByUs[pinnedId] == chatId ||
-            runCatching { mediaForwardDao.countByMessage(chatId, pinnedId) > 0 }.getOrDefault(false)
+            runCatching { mediaForwardDao.countByMessage(chatId, pinnedId) > 0 }.getOrDefault(false) ||
+            // Now-playing controls live in their own table; without this a restart between the pin and
+            // the poll leaves that notice stranded in the chat forever.
+            runCatching { nowPlayingSessionDao.countByMessage(chatId, pinnedId) > 0 }.getOrDefault(false)
         if (!ours) return false
         runCatching { api.deleteMessage(chatId = chatId, messageId = message.messageId) }
         return true

@@ -67,8 +67,15 @@ class PairingRepositoryImpl @Inject constructor(
             val updates = envelope.result.orEmpty()
             if (updates.isEmpty()) return PairingResult.NoUpdate
 
-            // Acknowledge everything we fetched so the next poll starts after it.
-            settings.setGetUpdatesOffset(updates.maxOf { it.updateId } + 1)
+            // Acknowledge what we fetched — but never past a button press.
+            //
+            // `offset` confirms every update below it, and confirmed updates are gone for good. The
+            // two stored offsets are only two client-side opinions about ONE server-side pointer, so
+            // acknowledging the whole batch here would quietly discard any callback_query the remote
+            // action poller had not collected yet: the user's press would vanish with nothing left to
+            // answer it. Stopping at the first press leaves it, and everything after it, queued.
+            val firstPress = updates.firstOrNull { it.callbackQuery != null }
+            settings.setGetUpdatesOffset(firstPress?.updateId ?: (updates.maxOf { it.updateId } + 1))
 
             val message = updates
                 .mapNotNull { it.message }
