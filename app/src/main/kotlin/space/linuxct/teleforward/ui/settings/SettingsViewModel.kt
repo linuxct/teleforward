@@ -16,6 +16,7 @@ import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import space.linuxct.teleforward.R
 import space.linuxct.teleforward.data.repo.OutboxRepository
 import space.linuxct.teleforward.data.secret.SecretStore
 import space.linuxct.teleforward.data.settings.SettingsRepository
@@ -96,14 +97,6 @@ data class SettingsUiState(
 ) {
     val paired: Boolean get() = chatId != null
 
-    /** Human-friendly recipient label for the recipient card. */
-    val recipientLabel: String
-        get() = when {
-            chatId == null -> "Not paired"
-            !chatDisplayName.isNullOrBlank() -> "$chatDisplayName · $chatId"
-            else -> chatId.toString()
-        }
-
     companion object {
         const val DEFAULT_EXPIRY_HOURS = 48
         const val MIN_EXPIRY_HOURS = 1
@@ -176,17 +169,25 @@ class SettingsViewModel @Inject constructor(
     fun submitToken(rawToken: String) {
         val token = rawToken.trim()
         if (token.isEmpty()) {
-            _state.update { it.copy(tokenAction = ActionState.Error("Enter a bot token")) }
+            _state.update {
+                it.copy(
+                    tokenAction = ActionState.Error(
+                        appContext.getString(R.string.settings_error_enter_token),
+                    ),
+                )
+            }
             return
         }
         _state.update { it.copy(tokenAction = ActionState.Running) }
         viewModelScope.launch {
             when (val result = pairingRepository.validateToken(token)) {
                 is TokenValidation.Valid -> {
-                    val label = result.botUsername?.let { "@$it" } ?: "bot #${result.botId}"
+                    val connected = result.botUsername?.let { username ->
+                        appContext.getString(R.string.settings_token_connected_username, username)
+                    } ?: appContext.getString(R.string.settings_token_connected_id, result.botId)
                     _state.update {
                         it.copy(
-                            tokenAction = ActionState.Success("Connected to $label"),
+                            tokenAction = ActionState.Success(connected),
                             tokenSet = true,
                             botUsername = result.botUsername ?: it.botUsername,
                         )
@@ -208,11 +209,16 @@ class SettingsViewModel @Inject constructor(
         _state.update { it.copy(pairAction = ActionState.Running) }
         viewModelScope.launch {
             val next = when (val result = pairingRepository.captureChatId()) {
-                is PairingResult.Captured ->
-                    ActionState.Success("Paired with ${result.displayName ?: result.chatId}")
+                is PairingResult.Captured -> ActionState.Success(
+                    appContext.getString(
+                        R.string.settings_pair_success,
+                        result.displayName ?: result.chatId.toString(),
+                    ),
+                )
 
-                PairingResult.NoUpdate ->
-                    ActionState.Error("No Start message seen yet — open the bot, press Start, then try again.")
+                PairingResult.NoUpdate -> ActionState.Error(
+                    appContext.getString(R.string.settings_pair_no_update),
+                )
 
                 is PairingResult.Error -> ActionState.Error(result.message)
             }
@@ -224,13 +230,25 @@ class SettingsViewModel @Inject constructor(
     fun submitManualChatId(raw: String) {
         val chatId = raw.trim().toLongOrNull()
         if (chatId == null) {
-            _state.update { it.copy(pairAction = ActionState.Error("Enter a numeric chat id")) }
+            _state.update {
+                it.copy(
+                    pairAction = ActionState.Error(
+                        appContext.getString(R.string.settings_error_numeric_chat_id),
+                    ),
+                )
+            }
             return
         }
         _state.update { it.copy(pairAction = ActionState.Running) }
         viewModelScope.launch {
             pairingRepository.setManualChatId(chatId)
-            _state.update { it.copy(pairAction = ActionState.Success("Recipient set to $chatId")) }
+            _state.update {
+                it.copy(
+                    pairAction = ActionState.Success(
+                        appContext.getString(R.string.settings_recipient_set, chatId),
+                    ),
+                )
+            }
         }
     }
 
@@ -239,8 +257,13 @@ class SettingsViewModel @Inject constructor(
         _state.update { it.copy(testAction = ActionState.Running) }
         viewModelScope.launch {
             val next = when (val result = pairingRepository.sendTest()) {
-                is SendResult.Success -> ActionState.Success("Test message sent")
-                is SendResult.RetryAfter -> ActionState.Error("Rate limited — retry in ${result.seconds}s")
+                is SendResult.Success ->
+                    ActionState.Success(appContext.getString(R.string.settings_test_sent))
+
+                is SendResult.RetryAfter -> ActionState.Error(
+                    appContext.getString(R.string.settings_error_rate_limited, result.seconds),
+                )
+
                 is SendResult.Transient -> ActionState.Error(result.message)
                 is SendResult.BadRequest -> ActionState.Error(result.message)
                 is SendResult.Terminal -> ActionState.Error(result.message)
@@ -310,7 +333,13 @@ class SettingsViewModel @Inject constructor(
     fun clearDeliveredLog() {
         viewModelScope.launch {
             outboxRepository.clearSent()
-            _state.update { it.copy(maintenanceAction = ActionState.Success("Delivered items cleared")) }
+            _state.update {
+                it.copy(
+                    maintenanceAction = ActionState.Success(
+                        appContext.getString(R.string.settings_maintenance_delivered_cleared),
+                    ),
+                )
+            }
         }
     }
 
@@ -318,7 +347,13 @@ class SettingsViewModel @Inject constructor(
     fun clearAllLog() {
         viewModelScope.launch {
             outboxRepository.clearAll()
-            _state.update { it.copy(maintenanceAction = ActionState.Success("Delivery log cleared")) }
+            _state.update {
+                it.copy(
+                    maintenanceAction = ActionState.Success(
+                        appContext.getString(R.string.settings_maintenance_log_cleared),
+                    ),
+                )
+            }
         }
     }
 
@@ -363,12 +398,21 @@ class SettingsViewModel @Inject constructor(
                 onSuccess = { intent ->
                     _shareIntents.send(intent)
                     _state.update {
-                        it.copy(dumpState = ActionState.Success("Dump ready — choose where to share"))
+                        it.copy(
+                            dumpState = ActionState.Success(
+                                appContext.getString(R.string.settings_diag_dump_ready),
+                            ),
+                        )
                     }
                 },
                 onFailure = { error ->
                     _state.update {
-                        it.copy(dumpState = ActionState.Error(error.message ?: "Couldn't build the dump"))
+                        it.copy(
+                            dumpState = ActionState.Error(
+                                error.message
+                                    ?: appContext.getString(R.string.settings_diag_dump_failed),
+                            ),
+                        )
                     }
                 },
             )

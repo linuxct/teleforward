@@ -29,6 +29,7 @@ import kotlin.random.Random
 class RemoteActionKeyboards @Inject constructor(
     private val callbackTokenDao: CallbackTokenDao,
     private val json: Json,
+    private val strings: TelegramStrings,
 ) {
 
     /**
@@ -48,6 +49,7 @@ class RemoteActionKeyboards @Inject constructor(
         val notificationKey = row.notificationKey ?: return null
         val buttons = remoteButtons(
             actions = NotificationActions.decode(row.actionsJson),
+            labels = strings.buttonLabels,
             includeDismiss = includeDismiss,
             stableLabels = stableLabels,
         )
@@ -110,7 +112,7 @@ class RemoteActionKeyboards @Inject constructor(
         messageId: Long,
         now: Long,
     ): String? {
-        val buttons = remoteButtons(actions, includeDismiss = false, stableLabels = true)
+        val buttons = remoteButtons(actions, strings.buttonLabels, includeDismiss = false, stableLabels = true)
         callbackTokenDao.deleteForMessage(chatId, messageId)
         if (buttons.isEmpty()) return null
 

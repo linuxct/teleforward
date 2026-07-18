@@ -1,0 +1,87 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+
+    <!-- Pantalla de lista de aplicaciones. -->
+    <string name="apps_title">Apps</string>
+    <string name="apps_action_delivery_log">Registro de envíos</string>
+    <string name="apps_action_settings">Ajustes</string>
+    <string name="apps_search_placeholder">Buscar apps</string>
+    <string name="apps_search_clear">Borrar búsqueda</string>
+    <string name="apps_open_channels">Abrir canales</string>
+
+    <string name="apps_filter_all">Todas</string>
+    <string name="apps_filter_enabled">Activadas</string>
+    <string name="apps_filter_seen">Vistas</string>
+
+    <string name="apps_empty_title">Aún no hay apps</string>
+    <string name="apps_empty_body">Las apps aparecen aquí en cuanto se detecta una notificación suya.</string>
+    <string name="apps_empty_filtered_title">Ninguna app coincide con tu búsqueda</string>
+    <string name="apps_empty_filtered_body">Prueba con otra búsqueda u otro filtro.</string>
+
+    <!-- %1$s es un tiempo relativo, p. ej. «hace 5 minutos». -->
+    <string name="apps_last_seen">Vista %1$s</string>
+    <string name="apps_not_seen">Aún sin ver</string>
+    <!-- Une la parte de «vista por última vez» (%1$s) con el número de canales activados (%2$s). -->
+    <string name="apps_supporting_separator">%1$s · %2$s</string>
+    <plurals name="apps_channels_on">
+        <item quantity="one">%1$d canal activado</item>
+        <item quantity="other">%1$d canales activados</item>
+    </plurals>
+
+    <!-- Pantalla de selección de canales. -->
+    <string name="channels_section_channels">Canales</string>
+    <string name="channels_section_conversations">Conversaciones</string>
+
+    <string name="channels_magic_link_title">Reconstruir enlace mágico</string>
+    <string name="channels_magic_link_body">Aproximación: reconstruye el enlace al que apunta esta notificación a partir de los datos que expone y lo añade al mensaje reenviado. Es heurístico: no siempre encontrará una coincidencia.</string>
+
+    <string name="channels_contacts_title">Resolver contactos guardados</string>
+    <string name="channels_contacts_body">WhatsApp oculta los números de teléfono tras un ID interno, así que los chats con contactos guardados no se pueden enlazar sin acceso a Contactos. Concédelo para convertirlos en enlaces: el número no sale de tu móvil salvo dentro del enlace que reenvías.</string>
+    <string name="channels_contacts_granted">Concedido</string>
+    <string name="channels_contacts_grant">Conceder</string>
+
+    <string name="channels_whole_app_title">Reenviar toda la app</string>
+    <!-- %1$s es el nombre de la aplicación. -->
+    <string name="channels_whole_app_body">Si está activado, se reenvía cada notificación de %1$s salvo que un canal de abajo lo anule.</string>
+    <string name="channels_precedence_body">Prioridad: el interruptor de una conversación manda sobre el de su canal, y el de un canal manda sobre el ajuste de toda la app; activa o desactiva cualquiera de ellos para anularlo.</string>
+
+    <string name="channels_empty_title">Aún no se ha visto ningún canal</string>
+    <string name="channels_empty_body">Lanza una notificación desde esta app y aparecerá aquí.</string>
+    <string name="channels_conversations_empty">Aún no se ha visto ninguna conversación: recibe un mensaje de un chat concreto para verlo aquí.</string>
+
+    <!-- Une la etiqueta de importancia (%1$s) con el texto de última vez visto (%2$s). -->
+    <string name="channels_row_supporting">%1$s · %2$s</string>
+    <!-- %1$s es un tiempo relativo, p. ej. «hace 3 horas». -->
+    <string name="channels_last_seen">Última vez %1$s</string>
+
+    <string name="channels_importance_unknown">Importancia desconocida</string>
+    <string name="channels_importance_silent">Silencio</string>
+    <string name="channels_importance_minimal">Mínima</string>
+    <string name="channels_importance_low">Baja</string>
+    <string name="channels_importance_default">Predeterminada</string>
+    <string name="channels_importance_high">Alta</string>
+    <string name="channels_importance_urgent">Urgente</string>
+
+    <!-- Pantalla de registro de envíos. -->
+    <string name="log_title">Registro de envíos</string>
+    <string name="log_action_clear">Borrar</string>
+    <string name="log_action_retry">Reintentar</string>
+
+    <string name="log_empty_title">Aún no hay envíos</string>
+    <string name="log_empty_body">Las notificaciones reenviadas aparecerán aquí con su estado de envío.</string>
+
+    <!-- %1$s es el nombre de la app y %2$s el del canal de notificaciones. -->
+    <string name="log_app_channel">%1$s · %2$s</string>
+
+    <string name="log_status_pending">Pendiente</string>
+    <string name="log_status_sending">Enviando</string>
+    <string name="log_status_sent">Enviado</string>
+    <string name="log_status_failed">Fallido</string>
+    <string name="log_status_expired">Caducado</string>
+
+    <plurals name="log_image_count">
+        <item quantity="one">%1$d imagen</item>
+        <item quantity="other">%1$d imágenes</item>
+    </plurals>
+
+</resources>

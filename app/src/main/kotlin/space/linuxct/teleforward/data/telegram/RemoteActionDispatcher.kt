@@ -52,6 +52,7 @@ class RemoteActionDispatcher @Inject constructor(
     private val keyboards: RemoteActionKeyboards,
     private val settings: SettingsRepository,
     private val diag: RemoteActionDiag,
+    private val strings: TelegramStrings,
 ) {
 
     /**
@@ -68,10 +69,10 @@ class RemoteActionDispatcher @Inject constructor(
             // The poll worker was stopped mid-press. The press is real and the user is watching a
             // spinner, so answer under NonCancellable before unwinding — a plain call here would be
             // cancelled immediately and silently.
-            withContext(NonCancellable) { ack.answer(STOPPED_TEXT, alert = true) }
+            withContext(NonCancellable) { ack.answer(strings.stoppedMidPress, alert = true) }
             throw ce
         } catch (t: Throwable) {
-            ack.answer("Couldn't complete that: ${t.message ?: t.javaClass.simpleName}", alert = true)
+            ack.answer(strings.couldntComplete(t.message ?: t.javaClass.simpleName), alert = true)
         } finally {
             // Runs on every path, including the cancellation one.
             withContext(NonCancellable) { ack.finish() }
@@ -108,9 +109,9 @@ class RemoteActionDispatcher @Inject constructor(
             )
             ack.answer(
                 when (reason) {
-                    "noChat" -> "Couldn't tell which chat that press came from"
-                    "notPaired" -> "TeleForward isn't paired with a chat — re-pair it in Settings"
-                    else -> "Not authorised"
+                    "noChat" -> strings.noChat
+                    "notPaired" -> strings.notPaired
+                    else -> strings.notAuthorised
                 },
                 alert = true,
             )
@@ -138,7 +139,7 @@ class RemoteActionDispatcher @Inject constructor(
                 outcome = if (superseded) "tokenSuperseded" else "tokenExpired",
             )
             ack.answer(
-                if (superseded) SUPERSEDED_TEXT else EXPIRED_TEXT,
+                if (superseded) strings.buttonSuperseded else strings.buttonExpired,
                 alert = true,
             )
             return
@@ -150,7 +151,7 @@ class RemoteActionDispatcher @Inject constructor(
                 token,
                 ack,
                 onDevice { gateway.dismiss(token.notificationKey) },
-                "Dismissed",
+                strings.dismissed,
             )
 
             // The generic case: fire the app's own action exactly as the phone would.
@@ -172,7 +173,7 @@ class RemoteActionDispatcher @Inject constructor(
             // Inline buttons can't collect free text, so open the client's reply box instead.
             RemoteActionKind.REPLY -> promptForReply(query, token, ack)
 
-            null -> ack.answer("Unsupported action", alert = true)
+            null -> ack.answer(strings.unsupportedAction, alert = true)
         }
     }
 
@@ -187,7 +188,7 @@ class RemoteActionDispatcher @Inject constructor(
     private suspend fun onDevice(block: suspend () -> RemoteActionResult): RemoteActionResult =
         try {
             withTimeoutOrNull(DEVICE_TIMEOUT_MS) { block() }
-                ?: RemoteActionResult.Failed("the phone didn't respond within ${DEVICE_TIMEOUT_MS / 1000}s")
+                ?: RemoteActionResult.Failed(strings.deviceTimeout((DEVICE_TIMEOUT_MS / 1000).toInt()))
         } catch (ce: CancellationException) {
             throw ce
         } catch (t: Throwable) {
@@ -212,9 +213,9 @@ class RemoteActionDispatcher @Inject constructor(
             runCatching {
                 api.sendMessage(
                     chatId = token.chatId,
-                    text = REPLY_PROMPT_TEXT,
+                    text = strings.replyPrompt,
                     parseMode = null,
-                    replyMarkup = keyboards.forceReplyMarkup(REPLY_PROMPT_PLACEHOLDER),
+                    replyMarkup = keyboards.forceReplyMarkup(strings.replyPromptPlaceholder),
                     // Quote the forwarded message so the prompt is visibly attached to it.
                     replyToMessageId = query.message?.messageId,
                 )
@@ -223,7 +224,7 @@ class RemoteActionDispatcher @Inject constructor(
 
         val promptId = prompt?.body()?.result?.messageId
         if (promptId == null) {
-            ack.answer("Reply to the forwarded message and I'll send it", alert = true)
+            ack.answer(strings.replyFallbackHint, alert = true)
             return
         }
         // Route a reply to the prompt back to this notification's reply action.
@@ -262,7 +263,7 @@ class RemoteActionDispatcher @Inject constructor(
                 runCatching {
                     api.sendMessage(
                         chatId = chatId,
-                        text = NO_REPLY_ACTION_TEXT,
+                        text = strings.noReplyAction,
                         parseMode = null,
                         replyToMessageId = message.messageId,
                     )
@@ -322,7 +323,7 @@ class RemoteActionDispatcher @Inject constructor(
         }
 
         val messageId = query.message?.messageId ?: return
-        val label = if (result is RemoteActionResult.Success) "✓ $successText" else "✓ Already gone"
+        val label = if (result is RemoteActionResult.Success) "✓ $successText" else strings.alreadyGone
         runCatching {
             api.editMessageReplyMarkup(
                 chatId = token.chatId,
@@ -333,10 +334,10 @@ class RemoteActionDispatcher @Inject constructor(
     }
 
     private fun outcomeText(result: RemoteActionResult, successText: String): String =
-        RemoteActionFeedback.outcomeText(result, successText)
+        strings.outcomeText(result, successText)
 
     private fun replyOutcomeText(result: RemoteActionResult): String =
-        RemoteActionFeedback.replyOutcomeText(result)
+        strings.replyOutcomeText(result)
 
     /** A token is not authorisation: the press must come from the one paired chat. */
     private suspend fun isFromPairedChat(chatId: Long?): Boolean {
@@ -388,7 +389,7 @@ class RemoteActionDispatcher @Inject constructor(
         suspend fun finish() {
             if (!answered) {
                 // A branch returned without answering — a bug, but the user must not pay for it.
-                answer(GENERIC_FAILURE_TEXT, alert = true)
+                answer(strings.genericFailure, alert = true)
             }
             diag.answer(delivered = delivered, error = failure)
             if (delivered) return
@@ -397,7 +398,7 @@ class RemoteActionDispatcher @Inject constructor(
             runCatching {
                 api.sendMessage(
                     chatId = target,
-                    text = RemoteActionFeedback.undeliveredAnswerText(text, failure),
+                    text = strings.undeliveredAnswerText(text, failure),
                     parseMode = null,
                     replyToMessageId = query.message?.messageId,
                 )
@@ -406,8 +407,6 @@ class RemoteActionDispatcher @Inject constructor(
     }
 
     private companion object {
-        const val REPLY_PROMPT_TEXT = "✍️ Reply to this message and I'll send it from your phone."
-        const val REPLY_PROMPT_PLACEHOLDER = "Type your reply…"
 
         /**
          * Ceilings on the two things that happen *before* the answer.
@@ -421,11 +420,5 @@ class RemoteActionDispatcher @Inject constructor(
         const val DEVICE_TIMEOUT_MS = 6_000L
         const val PROMPT_TIMEOUT_MS = 5_000L
 
-        const val EXPIRED_TEXT = "This button has expired"
-        const val SUPERSEDED_TEXT = "These buttons were replaced — use the newest message"
-        const val STOPPED_TEXT = "TeleForward stopped listening mid-press — try again"
-        const val GENERIC_FAILURE_TEXT = "Something went wrong handling that press"
-        const val NO_REPLY_ACTION_TEXT =
-            "⚠️ That message has no reply action — this app doesn't accept replies from here."
     }
 }

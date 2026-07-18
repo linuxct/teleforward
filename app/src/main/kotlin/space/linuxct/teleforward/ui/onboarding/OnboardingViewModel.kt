@@ -17,6 +17,7 @@ import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import space.linuxct.teleforward.R
 import space.linuxct.teleforward.data.settings.SettingsRepository
 import space.linuxct.teleforward.data.telegram.PairingRepository
 import space.linuxct.teleforward.data.telegram.PairingResult
@@ -205,13 +206,20 @@ class OnboardingViewModel @Inject constructor(
     fun validateToken() {
         val token = _state.value.tokenInput.trim()
         if (token.isEmpty()) {
-            _state.update { it.copy(tokenError = "Enter your bot token.") }
+            _state.update {
+                it.copy(tokenError = appContext.getString(R.string.onboarding_error_token_empty))
+            }
             return
         }
         _state.update { it.copy(validatingToken = true, tokenError = null) }
         viewModelScope.launch {
             val result = runCatching { pairingRepository.validateToken(token) }
-                .getOrElse { TokenValidation.Invalid(it.message ?: "Validation failed.") }
+                .getOrElse {
+                    TokenValidation.Invalid(
+                        it.message
+                            ?: appContext.getString(R.string.onboarding_error_validation_failed),
+                    )
+                }
             _state.update {
                 when (result) {
                     is TokenValidation.Valid -> it.copy(
@@ -247,22 +255,31 @@ class OnboardingViewModel @Inject constructor(
         }
         viewModelScope.launch {
             val result = runCatching { pairingRepository.captureChatId() }
-                .getOrElse { PairingResult.Error(it.message ?: "Pairing failed.") }
+                .getOrElse {
+                    PairingResult.Error(
+                        it.message
+                            ?: appContext.getString(R.string.onboarding_error_pairing_failed),
+                    )
+                }
             _state.update {
                 when (result) {
                     is PairingResult.Captured -> it.copy(
                         capturing = false,
                         chatId = result.chatId,
                         chatDisplayName = result.displayName,
-                        pairingInfo = "Paired with " +
-                            (result.displayName ?: "chat ${result.chatId}") + ".",
+                        pairingInfo = appContext.getString(
+                            R.string.onboarding_pair_paired,
+                            result.displayName ?: appContext.getString(
+                                R.string.onboarding_pair_chat_fallback,
+                                result.chatId,
+                            ),
+                        ),
                         pairingError = null,
                     )
 
                     PairingResult.NoUpdate -> it.copy(
                         capturing = false,
-                        pairingInfo = "No message yet. Open the bot, press Start, then tap " +
-                            "Capture again.",
+                        pairingInfo = appContext.getString(R.string.onboarding_pair_no_update),
                         pairingError = null,
                     )
 
@@ -279,7 +296,13 @@ class OnboardingViewModel @Inject constructor(
         val raw = _state.value.manualChatIdInput.trim()
         val id = raw.toLongOrNull()
         if (id == null) {
-            _state.update { it.copy(manualChatIdError = "Enter a numeric chat id.") }
+            _state.update {
+                it.copy(
+                    manualChatIdError = appContext.getString(
+                        R.string.onboarding_error_manual_chat_id_invalid,
+                    ),
+                )
+            }
             return
         }
         viewModelScope.launch {
@@ -288,16 +311,25 @@ class OnboardingViewModel @Inject constructor(
                     _state.update {
                         it.copy(
                             chatId = id,
-                            chatDisplayName = "Chat $id",
+                            chatDisplayName = appContext.getString(
+                                R.string.onboarding_pair_chat_display_name,
+                                id,
+                            ),
                             manualChatIdError = null,
-                            pairingInfo = "Recipient set to chat $id.",
+                            pairingInfo = appContext.getString(
+                                R.string.onboarding_pair_recipient_set,
+                                id,
+                            ),
                             pairingError = null,
                         )
                     }
                 }
                 .onFailure { t ->
                     _state.update {
-                        it.copy(manualChatIdError = t.message ?: "Could not set chat id.")
+                        it.copy(
+                            manualChatIdError = t.message
+                                ?: appContext.getString(R.string.onboarding_error_set_chat_id),
+                        )
                     }
                 }
         }
@@ -308,23 +340,33 @@ class OnboardingViewModel @Inject constructor(
         _state.update { it.copy(sendingTest = true, testSuccess = null, testError = null) }
         viewModelScope.launch {
             val result = runCatching { pairingRepository.sendTest() }
-                .getOrElse { SendResult.Transient(it.message ?: "Send failed.") }
+                .getOrElse {
+                    SendResult.Transient(
+                        it.message ?: appContext.getString(R.string.onboarding_error_send_failed),
+                    )
+                }
             _state.update {
                 when (result) {
                     is SendResult.Success -> it.copy(
                         sendingTest = false,
-                        testSuccess = "Test message sent. Check your Telegram chat.",
+                        testSuccess = appContext.getString(R.string.onboarding_test_sent),
                         testError = null,
                     )
 
                     is SendResult.RetryAfter -> it.copy(
                         sendingTest = false,
-                        testError = "Rate limited by Telegram. Try again in ${result.seconds}s.",
+                        testError = appContext.getString(
+                            R.string.onboarding_error_rate_limited,
+                            result.seconds,
+                        ),
                     )
 
                     is SendResult.Transient -> it.copy(
                         sendingTest = false,
-                        testError = "Network problem: ${result.message}",
+                        testError = appContext.getString(
+                            R.string.onboarding_error_network,
+                            result.message,
+                        ),
                     )
 
                     is SendResult.BadRequest -> it.copy(

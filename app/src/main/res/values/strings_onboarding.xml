@@ -1,0 +1,73 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="onboarding_title">Set up TeleForward</string>
+    <string name="onboarding_step_counter">Step %1$d of %2$d</string>
+    <string name="onboarding_open_settings_failed">Couldn\'t open notification settings.</string>
+
+    <string name="onboarding_welcome_title">Mirror your notifications to Telegram</string>
+    <string name="onboarding_welcome_body">TeleForward forwards the notifications you choose to a single Telegram chat you control. This app is the bot — it talks directly to Telegram, with no server in between.</string>
+    <string name="onboarding_welcome_privacy_title">Your privacy</string>
+    <string name="onboarding_welcome_privacy_body">Notification content is only read for the apps and channels you enable, and only to forward it. Your bot token is stored in the Android Keystore and never leaves your device except to reach Telegram.</string>
+
+    <string name="onboarding_access_title">Grant notification access</string>
+    <string name="onboarding_access_body">TeleForward needs notification access to read incoming notifications. Open system settings, enable TeleForward, then return here.</string>
+    <string name="onboarding_access_open_settings_button">Open notification access settings</string>
+    <string name="onboarding_access_granted">Notification access granted.</string>
+    <string name="onboarding_access_not_granted">Not granted yet. This screen updates automatically when you come back.</string>
+
+    <string name="onboarding_token_title">Connect your bot</string>
+    <string name="onboarding_token_body">Create a bot with @BotFather in Telegram and paste its token here. We validate it with Telegram and store it securely on this device.</string>
+    <string name="onboarding_token_label">Bot token</string>
+    <string name="onboarding_token_show">Show</string>
+    <string name="onboarding_token_hide">Hide</string>
+    <string name="onboarding_token_validating">Validating…</string>
+    <string name="onboarding_token_validate_button">Validate token</string>
+    <string name="onboarding_token_bot_fallback">your bot</string>
+    <string name="onboarding_token_connected">Connected to %1$s.</string>
+
+    <string name="onboarding_pair_title">Pair your chat</string>
+    <string name="onboarding_pair_body_with_link">Open your bot at %1$s and press Start. Then tap Capture below and TeleForward will pick up your chat automatically.</string>
+    <string name="onboarding_pair_body">Open your bot in Telegram and press Start. Then tap Capture below and TeleForward will pick up your chat automatically.</string>
+    <string name="onboarding_pair_capturing">Capturing…</string>
+    <string name="onboarding_pair_capture_button">Capture chat</string>
+    <string name="onboarding_pair_manual_title">Or enter a chat id manually</string>
+    <string name="onboarding_pair_manual_label">Numeric chat id</string>
+    <string name="onboarding_pair_manual_apply_button">Use this chat id</string>
+    <string name="onboarding_pair_chat_fallback">chat %1$d</string>
+    <string name="onboarding_pair_recipient">Recipient: %1$s</string>
+    <string name="onboarding_pair_sending">Sending…</string>
+    <string name="onboarding_pair_send_test_button">Send test message</string>
+    <string name="onboarding_pair_paired">Paired with %1$s.</string>
+    <string name="onboarding_pair_no_update">No message yet. Open the bot, press Start, then tap Capture again.</string>
+    <string name="onboarding_pair_chat_display_name">Chat %1$d</string>
+    <string name="onboarding_pair_recipient_set">Recipient set to chat %1$d.</string>
+    <string name="onboarding_test_sent">Test message sent. Check your Telegram chat.</string>
+
+    <string name="onboarding_features_title">What you\'ll get</string>
+    <string name="onboarding_features_body">Two things are switched on already. You can change both later.</string>
+    <string name="onboarding_features_magic_links_title">✨ Magic links</string>
+    <string name="onboarding_features_magic_links_body">For some apps TeleForward works out the link the notification would have opened and adds it to the message — the YouTube video, the Apple Music song, the WhatsApp chat. It\'s best-effort: when it can\'t be sure, it adds nothing rather than the wrong link. Turn it off per app under Apps.</string>
+    <string name="onboarding_features_actions_title">🎛️ Action buttons</string>
+    <string name="onboarding_features_actions_body">Buttons under each forwarded message that act on this phone — dismiss it, mark it read, or whatever that app offers. Reply by replying to the message in Telegram.</string>
+    <string name="onboarding_features_actions_note">To catch a button press, the app briefly checks Telegram for a few minutes after each forward. Buttons only work while the notification is still on the phone.</string>
+    <string name="onboarding_features_settings_note">Also in Settings: \"Always listening\" for instant button presses, and a \"Now playing\" control that turns media notifications into one remote-control message.</string>
+
+    <string name="onboarding_post_notifications_title">Allow notifications</string>
+    <string name="onboarding_post_notifications_body">Allow TeleForward to post its own status notification so you can see forwarding is running. This is optional — you can skip it.</string>
+    <string name="onboarding_post_notifications_granted">Notifications allowed.</string>
+    <string name="onboarding_post_notifications_button">Allow notifications</string>
+
+    <string name="onboarding_back">Back</string>
+    <string name="onboarding_finishing">Finishing…</string>
+    <string name="onboarding_finish">Finish</string>
+    <string name="onboarding_next">Next</string>
+
+    <string name="onboarding_error_token_empty">Enter your bot token.</string>
+    <string name="onboarding_error_validation_failed">Validation failed.</string>
+    <string name="onboarding_error_pairing_failed">Pairing failed.</string>
+    <string name="onboarding_error_manual_chat_id_invalid">Enter a numeric chat id.</string>
+    <string name="onboarding_error_set_chat_id">Could not set chat id.</string>
+    <string name="onboarding_error_send_failed">Send failed.</string>
+    <string name="onboarding_error_rate_limited">Rate limited by Telegram. Try again in %1$ds.</string>
+    <string name="onboarding_error_network">Network problem: %1$s</string>
+</resources>

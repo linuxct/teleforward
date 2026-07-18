@@ -1,0 +1,87 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+
+    <!-- App list screen. -->
+    <string name="apps_title">Apps</string>
+    <string name="apps_action_delivery_log">Delivery log</string>
+    <string name="apps_action_settings">Settings</string>
+    <string name="apps_search_placeholder">Search apps</string>
+    <string name="apps_search_clear">Clear search</string>
+    <string name="apps_open_channels">Open channels</string>
+
+    <string name="apps_filter_all">All</string>
+    <string name="apps_filter_enabled">Enabled</string>
+    <string name="apps_filter_seen">Seen</string>
+
+    <string name="apps_empty_title">No apps yet</string>
+    <string name="apps_empty_body">Apps appear here once a notification from them has been observed.</string>
+    <string name="apps_empty_filtered_title">No apps match your search</string>
+    <string name="apps_empty_filtered_body">Try a different search or filter.</string>
+
+    <!-- %1$s is a relative time, e.g. "5 minutes ago". -->
+    <string name="apps_last_seen">Seen %1$s</string>
+    <string name="apps_not_seen">Not seen yet</string>
+    <!-- Joins the last-seen part (%1$s) with the enabled-channel count (%2$s). -->
+    <string name="apps_supporting_separator">%1$s · %2$s</string>
+    <plurals name="apps_channels_on">
+        <item quantity="one">%1$d channel on</item>
+        <item quantity="other">%1$d channels on</item>
+    </plurals>
+
+    <!-- Channel picker screen. -->
+    <string name="channels_section_channels">Channels</string>
+    <string name="channels_section_conversations">Conversations</string>
+
+    <string name="channels_magic_link_title">Reconstruct magic link</string>
+    <string name="channels_magic_link_body">Best-effort: reconstructs the link this notification points to from the details it exposes and appends it to the forwarded message. Heuristic — it won\'t always find a match.</string>
+
+    <string name="channels_contacts_title">Resolve saved contacts</string>
+    <string name="channels_contacts_body">WhatsApp hides phone numbers behind an internal ID, so chats with saved contacts can\'t be linked without Contacts access. Grant it to turn those into links — the number stays on your device except inside the link you forward.</string>
+    <string name="channels_contacts_granted">Granted</string>
+    <string name="channels_contacts_grant">Grant</string>
+
+    <string name="channels_whole_app_title">Forward entire app</string>
+    <!-- %1$s is the app label. -->
+    <string name="channels_whole_app_body">When on, every notification from %1$s is forwarded unless a channel below overrides it.</string>
+    <string name="channels_precedence_body">Precedence: a conversation switch wins over its channel, and a channel switch wins over the whole-app setting — turn any of them on or off to override.</string>
+
+    <string name="channels_empty_title">No channels seen yet</string>
+    <string name="channels_empty_body">Trigger a notification from this app and it will show up here.</string>
+    <string name="channels_conversations_empty">No conversations seen yet — receive a message from a specific chat to see it here.</string>
+
+    <!-- Joins the importance label (%1$s) with the last-seen text (%2$s). -->
+    <string name="channels_row_supporting">%1$s · %2$s</string>
+    <!-- %1$s is a relative time, e.g. "3 hours ago". -->
+    <string name="channels_last_seen">Last seen %1$s</string>
+
+    <string name="channels_importance_unknown">Importance unknown</string>
+    <string name="channels_importance_silent">Silent</string>
+    <string name="channels_importance_minimal">Minimal</string>
+    <string name="channels_importance_low">Low</string>
+    <string name="channels_importance_default">Default</string>
+    <string name="channels_importance_high">High</string>
+    <string name="channels_importance_urgent">Urgent</string>
+
+    <!-- Delivery log screen. -->
+    <string name="log_title">Delivery log</string>
+    <string name="log_action_clear">Clear</string>
+    <string name="log_action_retry">Retry</string>
+
+    <string name="log_empty_title">No deliveries yet</string>
+    <string name="log_empty_body">Forwarded notifications will show up here with their delivery status.</string>
+
+    <!-- %1$s is the app label, %2$s the notification channel name. -->
+    <string name="log_app_channel">%1$s · %2$s</string>
+
+    <string name="log_status_pending">Pending</string>
+    <string name="log_status_sending">Sending</string>
+    <string name="log_status_sent">Sent</string>
+    <string name="log_status_failed">Failed</string>
+    <string name="log_status_expired">Expired</string>
+
+    <plurals name="log_image_count">
+        <item quantity="one">%1$d image</item>
+        <item quantity="other">%1$d images</item>
+    </plurals>
+
+</resources>

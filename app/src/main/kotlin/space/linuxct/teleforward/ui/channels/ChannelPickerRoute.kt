@@ -10,6 +10,7 @@ import android.content.pm.PackageManager
 import android.text.format.DateUtils
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.annotation.StringRes
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -44,6 +45,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
@@ -117,7 +119,7 @@ private fun ChannelPickerScreen(
                 item { WhatsAppContactsCard() }
             }
             item { PrecedenceExplainer() }
-            item { SectionHeader("Channels") }
+            item { SectionHeader(stringResource(R.string.channels_section_channels)) }
 
             when {
                 state.loading -> item {
@@ -140,7 +142,7 @@ private fun ChannelPickerScreen(
             }
 
             if (!state.loading) {
-                item { SectionHeader("Conversations") }
+                item { SectionHeader(stringResource(R.string.channels_section_conversations)) }
                 if (state.conversations.isEmpty()) {
                     item { EmptyConversations() }
                 } else {
@@ -186,13 +188,11 @@ private fun MagicLinkCard(
             Spacer(Modifier.width(12.dp))
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = "Reconstruct magic link",
+                    text = stringResource(R.string.channels_magic_link_title),
                     style = MaterialTheme.typography.titleMedium,
                 )
                 Text(
-                    text = "Best-effort: reconstructs the link this notification points to from the " +
-                        "details it exposes and appends it to the forwarded message. Heuristic — it " +
-                        "won't always find a match.",
+                    text = stringResource(R.string.channels_magic_link_body),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(top = 4.dp),
@@ -230,13 +230,11 @@ private fun WhatsAppContactsCard() {
         ) {
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = "Resolve saved contacts",
+                    text = stringResource(R.string.channels_contacts_title),
                     style = MaterialTheme.typography.titleMedium,
                 )
                 Text(
-                    text = "WhatsApp hides phone numbers behind an internal ID, so chats with saved " +
-                        "contacts can't be linked without Contacts access. Grant it to turn those into " +
-                        "links — the number stays on your device except inside the link you forward.",
+                    text = stringResource(R.string.channels_contacts_body),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(top = 4.dp),
@@ -245,13 +243,13 @@ private fun WhatsAppContactsCard() {
             Spacer(Modifier.width(12.dp))
             if (granted) {
                 Text(
-                    text = "Granted",
+                    text = stringResource(R.string.channels_contacts_granted),
                     style = MaterialTheme.typography.labelLarge,
                     color = MaterialTheme.colorScheme.primary,
                 )
             } else {
                 Button(onClick = { launcher.launch(Manifest.permission.READ_CONTACTS) }) {
-                    Text("Grant")
+                    Text(stringResource(R.string.channels_contacts_grant))
                 }
             }
         }
@@ -277,12 +275,11 @@ private fun WholeAppHeader(
         ) {
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = "Forward entire app",
+                    text = stringResource(R.string.channels_whole_app_title),
                     style = MaterialTheme.typography.titleMedium,
                 )
                 Text(
-                    text = "When on, every notification from $appLabel is forwarded unless a " +
-                        "channel below overrides it.",
+                    text = stringResource(R.string.channels_whole_app_body, appLabel),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(top = 4.dp),
@@ -314,8 +311,7 @@ private fun PrecedenceExplainer() {
             )
             Spacer(Modifier.width(12.dp))
             Text(
-                text = "Precedence: a conversation switch wins over its channel, and a channel " +
-                    "switch wins over the whole-app setting — turn any of them on or off to override.",
+                text = stringResource(R.string.channels_precedence_body),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -373,7 +369,7 @@ private fun EmptyConversations() {
         verticalArrangement = Arrangement.Center,
     ) {
         Text(
-            text = "No conversations seen yet — receive a message from a specific chat to see it here.",
+            text = stringResource(R.string.channels_conversations_empty),
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -396,12 +392,12 @@ private fun EmptyChannels() {
             modifier = Modifier.size(48.dp),
         )
         Text(
-            text = "No channels seen yet",
+            text = stringResource(R.string.channels_empty_title),
             style = MaterialTheme.typography.titleMedium,
             modifier = Modifier.padding(top = 16.dp),
         )
         Text(
-            text = "Trigger a notification from this app and it will show up here.",
+            text = stringResource(R.string.channels_empty_body),
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(top = 4.dp),
@@ -409,13 +405,16 @@ private fun EmptyChannels() {
     }
 }
 
-private fun ChannelRowUi.supportingText(): String = buildString {
-    append(importanceLabel(importance))
-    append(" · Last seen ")
-    append(relativeLastSeen(lastSeen))
-}
+@Composable
+private fun ChannelRowUi.supportingText(): String = stringResource(
+    R.string.channels_row_supporting,
+    stringResource(importanceLabelRes(importance)),
+    stringResource(R.string.channels_last_seen, relativeLastSeen(lastSeen).toString()),
+)
 
-private fun ConversationRowUi.supportingText(): String = "Last seen ${relativeLastSeen(lastSeen)}"
+@Composable
+private fun ConversationRowUi.supportingText(): String =
+    stringResource(R.string.channels_last_seen, relativeLastSeen(lastSeen).toString())
 
 private fun relativeLastSeen(lastSeen: Long): CharSequence =
     DateUtils.getRelativeTimeSpanString(
@@ -425,13 +424,15 @@ private fun relativeLastSeen(lastSeen: Long): CharSequence =
     )
 
 /** Maps a [android.app.NotificationManager] importance constant to a short human label. */
-private fun importanceLabel(importance: Int?): String = when (importance) {
-    null -> "Importance unknown"
-    0 -> "Silent" // IMPORTANCE_NONE
-    1 -> "Minimal" // IMPORTANCE_MIN
-    2 -> "Low" // IMPORTANCE_LOW
-    3 -> "Default" // IMPORTANCE_DEFAULT
-    4 -> "High" // IMPORTANCE_HIGH
-    5 -> "Urgent" // IMPORTANCE_MAX
-    else -> "Importance unknown" // IMPORTANCE_UNSPECIFIED (-1000) or unexpected
+@StringRes
+private fun importanceLabelRes(importance: Int?): Int = when (importance) {
+    null -> R.string.channels_importance_unknown
+    0 -> R.string.channels_importance_silent // IMPORTANCE_NONE
+    1 -> R.string.channels_importance_minimal // IMPORTANCE_MIN
+    2 -> R.string.channels_importance_low // IMPORTANCE_LOW
+    3 -> R.string.channels_importance_default // IMPORTANCE_DEFAULT
+    4 -> R.string.channels_importance_high // IMPORTANCE_HIGH
+    5 -> R.string.channels_importance_urgent // IMPORTANCE_MAX
+    // IMPORTANCE_UNSPECIFIED (-1000) or unexpected
+    else -> R.string.channels_importance_unknown
 }

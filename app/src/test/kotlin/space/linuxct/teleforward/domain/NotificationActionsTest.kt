@@ -14,6 +14,22 @@ import org.junit.Test
  */
 class NotificationActionsTest {
 
+    /**
+     * The English wording, as `strings.xml` defines it.
+     *
+     * The labels are passed in rather than read from resources precisely so these tests can stay pure
+     * JVM tests. Asserting against a fixture also means a *translation* can never break them — only a
+     * change to the button-selection logic itself can, which is what they are actually about.
+     */
+    private companion object {
+        val LABELS = ButtonLabels(
+            dismiss = "🗑 Dismiss",
+            playPause = "⏯ Play/Pause",
+            replyFallback = "Reply",
+            actionFallback = "Action",
+        )
+    }
+
     // --- fixtures taken from real captures -----------------------------------------------------
 
     /** WhatsApp: sem=1, has RemoteInput, MUTABLE — the one action we can inject text into. */
@@ -79,7 +95,7 @@ class NotificationActionsTest {
 
     @Test
     fun whatsAppKeepsReplyMarkReadAndDismiss() {
-        val buttons = remoteButtons(listOf(waReply, waMarkRead, waMute))
+        val buttons = remoteButtons(listOf(waReply, waMarkRead, waMute), LABELS)
         assertEquals(
             listOf(
                 RemoteActionKind.REPLY,
@@ -106,7 +122,7 @@ class NotificationActionsTest {
     fun k9MailGetsItsRealActions() {
         // Every K-9 action reports semantic 0 and is immutable — under semantic-only curation this
         // app got nothing but Dismiss, even though these actions fire perfectly.
-        val buttons = remoteButtons(listOf(k9Reply, k9MarkRead, k9Delete))
+        val buttons = remoteButtons(listOf(k9Reply, k9MarkRead, k9Delete), LABELS)
         assertEquals(
             listOf("Reply ↗", "Mark Read", "Delete", "🗑 Dismiss"),
             buttons.map { it.label },
@@ -125,10 +141,10 @@ class NotificationActionsTest {
     @Test
     fun activityActionsAreMarkedAsOpeningTheApp() {
         // The marker is the honest signal that this won't act silently.
-        assertTrue(remoteButtons(listOf(k9Reply)).first().label.endsWith(OPENS_APP_MARKER))
-        assertTrue(remoteButtons(listOf(waMute)).first().label.endsWith(OPENS_APP_MARKER))
+        assertTrue(remoteButtons(listOf(k9Reply), LABELS).first().label.endsWith(OPENS_APP_MARKER))
+        assertTrue(remoteButtons(listOf(waMute), LABELS).first().label.endsWith(OPENS_APP_MARKER))
         // A background action carries no marker.
-        assertEquals("Mark Read", remoteButtons(listOf(k9MarkRead)).first().label)
+        assertEquals("Mark Read", remoteButtons(listOf(k9MarkRead), LABELS).first().label)
     }
 
     @Test
@@ -138,7 +154,7 @@ class NotificationActionsTest {
             NotificationActionInfo(index = 1, title = "Pause", immutable = true),
             NotificationActionInfo(index = 2, title = "Forward to next item", immutable = true),
         )
-        val buttons = remoteButtons(media)
+        val buttons = remoteButtons(media, LABELS)
         assertEquals(4, buttons.size)
         // Long labels are truncated so the keyboard stays readable.
         assertTrue(buttons[0].label.length <= 22)
@@ -157,7 +173,7 @@ class NotificationActionsTest {
             NotificationActionInfo(index = index, title = title, immutable = true)
         }
 
-        val buttons = remoteButtons(appleMusic)
+        val buttons = remoteButtons(appleMusic, LABELS)
         assertEquals(
             listOf(
                 "Rewind to previous it…", // truncated to keep the keyboard readable
@@ -184,7 +200,7 @@ class NotificationActionsTest {
             NotificationActionInfo(index = 2, title = "Watch Later", immutable = true),
         )
 
-        val buttons = remoteButtons(youtube)
+        val buttons = remoteButtons(youtube, LABELS)
         assertEquals(
             listOf("Play ↗", "Turn Off ↗", "Watch Later", "🗑 Dismiss"),
             buttons.map { it.label },
@@ -198,7 +214,7 @@ class NotificationActionsTest {
     fun tooManyActionsAreCapped() {
         // Media notifications expose up to nine actions; the keyboard must stay usable.
         val many = (0 until 9).map { NotificationActionInfo(index = it, title = "A$it", immutable = true) }
-        val buttons = remoteButtons(many)
+        val buttons = remoteButtons(many, LABELS)
         assertEquals(7, buttons.size) // 6 actions + Dismiss
         assertEquals(RemoteActionKind.DISMISS, buttons.last().kind)
     }
@@ -210,7 +226,7 @@ class NotificationActionsTest {
         val immutableReply = waReply.copy(immutable = true)
         assertEquals(
             listOf(RemoteActionKind.DISMISS),
-            remoteButtons(listOf(immutableReply)).map { it.kind },
+            remoteButtons(listOf(immutableReply), LABELS).map { it.kind },
         )
     }
 
@@ -253,13 +269,14 @@ class NotificationActionsTest {
             val actions = listOf(NotificationActionInfo(index = 1, title = title, immutable = true))
             assertEquals(
                 "'$title' should be relabelled",
-                PLAY_PAUSE_LABEL,
-                remoteButtons(actions, includeDismiss = false, stableLabels = true).first().label,
+                LABELS.playPause,
+                remoteButtons(actions, LABELS, includeDismiss = false, stableLabels = true).first().label,
             )
         }
         // The action it targets is unchanged — only the wording differs.
         val buttons = remoteButtons(
             listOf(NotificationActionInfo(index = 1, title = "Pause", immutable = true)),
+            LABELS,
             includeDismiss = false,
             stableLabels = true,
         )
@@ -274,7 +291,7 @@ class NotificationActionsTest {
         val actions = listOf(NotificationActionInfo(index = 1, title = "Pause", immutable = true))
         assertEquals(
             "Pause",
-            remoteButtons(actions, includeDismiss = false, stableLabels = false).first().label,
+            remoteButtons(actions, LABELS, includeDismiss = false, stableLabels = false).first().label,
         )
     }
 
@@ -287,7 +304,7 @@ class NotificationActionsTest {
         )
         assertEquals(
             listOf("Next", "Shuffle"),
-            remoteButtons(actions, includeDismiss = false, stableLabels = true).map { it.label },
+            remoteButtons(actions, LABELS, includeDismiss = false, stableLabels = true).map { it.label },
         )
     }
 
@@ -302,7 +319,7 @@ class NotificationActionsTest {
         )
         assertEquals(
             listOf("Shuffle", "Repeat"),
-            remoteButtons(actions, includeDismiss = false).map { it.label },
+            remoteButtons(actions, LABELS, includeDismiss = false).map { it.label },
         )
     }
 
@@ -316,7 +333,7 @@ class NotificationActionsTest {
             NotificationActionInfo(index = 2, title = "Next", immutable = true),
             NotificationActionInfo(index = 3, title = "Stop", immutable = true),
         )
-        val buttons = remoteButtons(youtubePlayback, includeDismiss = false)
+        val buttons = remoteButtons(youtubePlayback, LABELS, includeDismiss = false)
         assertEquals(listOf("Previous", "Pause", "Next", "Stop"), buttons.map { it.label })
         assertTrue(buttons.none { it.kind == RemoteActionKind.DISMISS })
         // Index-addressed, because the label at index 1 flips between Play and Pause.
@@ -325,7 +342,7 @@ class NotificationActionsTest {
 
     @Test
     fun dismissIsAlwaysOffered() {
-        val buttons = remoteButtons(emptyList())
+        val buttons = remoteButtons(emptyList(), LABELS)
         assertEquals(listOf(RemoteActionKind.DISMISS), buttons.map { it.kind })
         assertEquals(RemoteActionButton.NO_ACTION, buttons.single().actionIndex)
     }

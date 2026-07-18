@@ -72,6 +72,22 @@ data class RemoteActionButton(
 }
 
 /**
+ * Wording for the buttons this app adds or renames itself.
+ *
+ * Passed in rather than read from resources so [remoteButtons] stays a pure, Android-free function
+ * with fast unit tests, while the strings themselves still live in `strings.xml` and get translated.
+ * An app's own action titles are never touched — only these four are ours to word.
+ */
+data class ButtonLabels(
+    val dismiss: String,
+    val playPause: String,
+    /** Used when an action carries a reply field but no title of its own. */
+    val replyFallback: String,
+    /** Used when an action has no title at all. */
+    val actionFallback: String,
+)
+
+/**
  * Pure: build the remote button set for a forwarded notification.
  *
  * The guiding rule is **mirror what the phone actually offers**. Earlier this keyed off
@@ -90,6 +106,8 @@ data class RemoteActionButton(
  */
 fun remoteButtons(
     actions: List<NotificationActionInfo>,
+    /** Wording for the buttons this app owns; see [ButtonLabels]. */
+    labels: ButtonLabels,
     /**
      * Set false for notifications the system won't let a listener clear — anything ongoing /
      * `NO_CLEAR` / foreground-service, i.e. every media notification. `cancelNotification()` is
@@ -119,13 +137,13 @@ fun remoteButtons(
         val kind = if (action.canReply) RemoteActionKind.REPLY else RemoteActionKind.FIRE
         out += RemoteActionButton(
             kind = kind,
-            label = buttonLabel(action, kind, stableLabels),
+            label = buttonLabel(action, kind, stableLabels, labels),
             actionIndex = action.index,
             semantic = action.semantic,
         )
     }
 
-    if (includeDismiss) out += RemoteActionButton(RemoteActionKind.DISMISS, "🗑 Dismiss")
+    if (includeDismiss) out += RemoteActionButton(RemoteActionKind.DISMISS, labels.dismiss)
     return out
 }
 
@@ -152,11 +170,12 @@ private fun buttonLabel(
     action: NotificationActionInfo,
     kind: RemoteActionKind,
     stableLabels: Boolean,
+    labels: ButtonLabels,
 ): String {
     // On a message that never updates, "Pause" becomes a lie as soon as it works. Name the toggle.
-    if (stableLabels && isPlayPauseToggle(action.title)) return PLAY_PAUSE_LABEL
+    if (stableLabels && isPlayPauseToggle(action.title)) return labels.playPause
 
-    val base = action.title.trim().ifEmpty { if (kind == RemoteActionKind.REPLY) "Reply" else "Action" }
+    val base = action.title.trim().ifEmpty { if (kind == RemoteActionKind.REPLY) labels.replyFallback else labels.actionFallback }
     val truncated = if (base.length > MAX_LABEL_LENGTH) {
         base.take(MAX_LABEL_LENGTH - 1).trimEnd() + "…"
     } else {
@@ -181,8 +200,6 @@ const val OPENS_APP_MARKER = "↗"
 // extra-binder handshake — a throwaway controller reads SHUFFLE_MODE_INVALID most of the time, which
 // is why an earlier attempt showed a label once and never again.
 
-/** Names the toggle instead of the current state, for a message that won't be re-rendered. */
-const val PLAY_PAUSE_LABEL = "⏯ Play/Pause"
 
 /**
  * Is this the transport play/pause toggle — the one action whose label flips underneath a message

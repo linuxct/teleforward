@@ -4,12 +4,19 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.RuntimeEnvironment
+import org.robolectric.annotation.Config
 import space.linuxct.teleforward.data.db.entity.OutboxEntity
 import space.linuxct.teleforward.data.db.entity.OutboxStatus
 
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [34])
 class MessageBuilderTest {
 
-    private val builder = MessageBuilderImpl()
+    private val builder =
+        MessageBuilderImpl(TelegramStrings(RuntimeEnvironment.getApplication()))
 
     private fun outbox(
         title: String? = "Some Title",

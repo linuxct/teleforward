@@ -53,6 +53,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
@@ -64,6 +65,7 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import android.net.Uri
 import space.linuxct.teleforward.BuildConfig
+import space.linuxct.teleforward.R
 import space.linuxct.teleforward.designsystem.AppScaffold
 import space.linuxct.teleforward.designsystem.SectionHeader
 import space.linuxct.teleforward.service.TelegramListenerService
@@ -169,7 +171,7 @@ private fun SettingsScreen(
     onDumpDiagnostics: () -> Unit,
     onClearDiagnostics: () -> Unit,
 ) {
-    AppScaffold(title = "Settings", onBack = onBack) { padding ->
+    AppScaffold(title = stringResource(R.string.settings_title), onBack = onBack) { padding ->
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -178,10 +180,10 @@ private fun SettingsScreen(
                 .padding(bottom = 24.dp),
             verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
-            SectionHeader("Bot token")
+            SectionHeader(stringResource(R.string.settings_section_bot_token))
             BotTokenCard(state = state, onSubmitToken = onSubmitToken)
 
-            SectionHeader("Recipient")
+            SectionHeader(stringResource(R.string.settings_section_recipient))
             RecipientCard(
                 state = state,
                 onCapturePairing = onCapturePairing,
@@ -190,7 +192,7 @@ private fun SettingsScreen(
                 onClearPairing = onClearPairing,
             )
 
-            SectionHeader("Forwarding")
+            SectionHeader(stringResource(R.string.settings_section_forwarding))
             ForwardingCard(
                 state = state,
                 onSetPaused = onSetPaused,
@@ -201,7 +203,7 @@ private fun SettingsScreen(
                 onSetExpiryHours = onSetExpiryHours,
             )
 
-            SectionHeader("Remote actions")
+            SectionHeader(stringResource(R.string.settings_section_remote_actions))
             RemoteActionsCard(
                 state = state,
                 onSetRemoteActionsEnabled = onSetRemoteActionsEnabled,
@@ -209,20 +211,20 @@ private fun SettingsScreen(
                 onSetNowPlayingEnabled = onSetNowPlayingEnabled,
             )
 
-            SectionHeader("Maintenance")
+            SectionHeader(stringResource(R.string.settings_section_maintenance))
             MaintenanceCard(
                 state = state,
                 onClearDelivered = onClearDelivered,
                 onClearAll = onClearAll,
             )
 
-            SectionHeader("About")
+            SectionHeader(stringResource(R.string.settings_section_about))
             AboutCard(
                 state = state,
                 onCheckForUpdates = onCheckForUpdates,
             )
 
-            SectionHeader("Diagnostics (advanced)")
+            SectionHeader(stringResource(R.string.settings_section_diagnostics))
             DiagnosticsCard(
                 state = state,
                 onSetDiagnosticsEnabled = onSetDiagnosticsEnabled,
@@ -241,16 +243,19 @@ private fun BotTokenCard(
     onSubmitToken: (String) -> Unit,
 ) {
     SettingsCard {
-        val presence = if (state.tokenSet) {
-            state.botUsername?.let { "Saved · @$it" } ?: "A bot token is saved"
-        } else {
-            "No token set"
+        val botUsername = state.botUsername
+        val presence = when {
+            !state.tokenSet -> stringResource(R.string.settings_token_none)
+            !botUsername.isNullOrBlank() ->
+                stringResource(R.string.settings_token_saved_as, botUsername)
+
+            else -> stringResource(R.string.settings_token_saved)
         }
         StatusLine(
             ok = state.tokenSet,
             text = presence,
-            okText = "A leaked token can't redirect forwards, but keep it private.",
-            problemText = "Enter your @BotFather token to connect the bot.",
+            okText = stringResource(R.string.settings_token_status_ok),
+            problemText = stringResource(R.string.settings_token_status_problem),
         )
 
         var token by remember { mutableStateOf("") }
@@ -261,13 +266,27 @@ private fun BotTokenCard(
             value = token,
             onValueChange = { token = it },
             modifier = Modifier.fillMaxWidth(),
-            label = { Text(if (state.tokenSet) "Replace bot token" else "Bot token") },
+            label = {
+                Text(
+                    if (state.tokenSet) {
+                        stringResource(R.string.settings_token_field_label_replace)
+                    } else {
+                        stringResource(R.string.settings_token_field_label)
+                    },
+                )
+            },
             singleLine = true,
             visualTransformation =
                 if (visible) VisualTransformation.None else PasswordVisualTransformation(),
             trailingIcon = {
                 TextButton(onClick = { visible = !visible }) {
-                    Text(if (visible) "Hide" else "Show")
+                    Text(
+                        if (visible) {
+                            stringResource(R.string.settings_hide)
+                        } else {
+                            stringResource(R.string.settings_show)
+                        },
+                    )
                 }
             },
         )
@@ -280,7 +299,13 @@ private fun BotTokenCard(
                 onClick = { onSubmitToken(token) },
                 enabled = token.isNotBlank() && !running,
             ) {
-                Text(if (state.tokenSet) "Validate & replace" else "Validate")
+                Text(
+                    if (state.tokenSet) {
+                        stringResource(R.string.settings_token_validate_replace)
+                    } else {
+                        stringResource(R.string.settings_token_validate)
+                    },
+                )
             }
             if (running) BusyIndicator()
         }
@@ -302,16 +327,26 @@ private fun RecipientCard(
     onClearPairing: () -> Unit,
 ) {
     SettingsCard {
+        // Human-friendly recipient headline; built here (rather than on the state) because it needs
+        // resources.
+        val chatId = state.chatId
+        val displayName = state.chatDisplayName
+        val recipientLabel = when {
+            chatId == null -> stringResource(R.string.settings_recipient_not_paired)
+            !displayName.isNullOrBlank() ->
+                stringResource(R.string.settings_recipient_label, displayName, chatId.toString())
+
+            else -> chatId.toString()
+        }
         StatusLine(
             ok = state.paired,
-            text = state.recipientLabel,
-            okText = "Messages are forwarded to this chat.",
-            problemText = "Pair the chat that will receive forwarded notifications.",
+            text = recipientLabel,
+            okText = stringResource(R.string.settings_recipient_status_ok),
+            problemText = stringResource(R.string.settings_recipient_status_problem),
         )
 
         Text(
-            text = "Open your bot in Telegram and press Start, then tap Re-pair. " +
-                "Or enter a numeric chat id from @userinfobot below.",
+            text = stringResource(R.string.settings_recipient_help),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -327,13 +362,13 @@ private fun RecipientCard(
             ) {
                 Icon(Icons.Filled.Refresh, contentDescription = null, modifier = Modifier.size(18.dp))
                 Spacer(Modifier.width(8.dp))
-                Text("Re-pair")
+                Text(stringResource(R.string.settings_recipient_repair))
             }
             Button(
                 onClick = onSendTest,
                 enabled = state.paired && state.testAction !is ActionState.Running,
             ) {
-                Text("Send test")
+                Text(stringResource(R.string.settings_recipient_send_test))
             }
             if (pairing) BusyIndicator()
         }
@@ -347,7 +382,7 @@ private fun RecipientCard(
             value = manualId,
             onValueChange = { input -> manualId = input.filter { it.isDigit() || it == '-' } },
             modifier = Modifier.fillMaxWidth(),
-            label = { Text("Manual chat id") },
+            label = { Text(stringResource(R.string.settings_recipient_manual_chat_id)) },
             singleLine = true,
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
         )
@@ -359,10 +394,10 @@ private fun RecipientCard(
                 },
                 enabled = manualId.isNotBlank(),
             ) {
-                Text("Set chat id")
+                Text(stringResource(R.string.settings_recipient_set_chat_id))
             }
             TextButton(onClick = onClearPairing, enabled = state.paired) {
-                Text("Clear pairing")
+                Text(stringResource(R.string.settings_recipient_clear_pairing))
             }
         }
     }
@@ -384,40 +419,38 @@ private fun ForwardingCard(
 ) {
     SettingsCard {
         SettingSwitchRow(
-            title = "Pause forwarding",
-            subtitle = "When on, nothing is forwarded anywhere.",
+            title = stringResource(R.string.settings_pause_title),
+            subtitle = stringResource(R.string.settings_pause_subtitle),
             checked = !state.forwardingEnabled,
             onCheckedChange = onSetPaused,
         )
         HorizontalDivider()
         SettingSwitchRow(
-            title = "Include images",
-            subtitle = "Extract and forward notification images.",
+            title = stringResource(R.string.settings_include_images_title),
+            subtitle = stringResource(R.string.settings_include_images_subtitle),
             checked = state.includeImages,
             onCheckedChange = onSetIncludeImages,
         )
         if (state.includeImages) {
             HorizontalDivider()
             SettingSwitchRow(
-                title = "Include contact photos",
-                subtitle = "Also forward the sender's avatar / app logo. Telegram shows every image " +
-                    "at full width, so a small avatar gets blown up and dwarfs the message — leave " +
-                    "this off to keep chat notifications as plain text.",
+                title = stringResource(R.string.settings_include_avatars_title),
+                subtitle = stringResource(R.string.settings_include_avatars_subtitle),
                 checked = state.includeAvatars,
                 onCheckedChange = onSetIncludeAvatars,
             )
         }
         HorizontalDivider()
         SettingSwitchRow(
-            title = "Wi-Fi only",
-            subtitle = "Deliver only on unmetered networks.",
+            title = stringResource(R.string.settings_wifi_only_title),
+            subtitle = stringResource(R.string.settings_wifi_only_subtitle),
             checked = state.wifiOnly,
             onCheckedChange = onSetWifiOnly,
         )
         HorizontalDivider()
         SettingSwitchRow(
-            title = "Skip ongoing",
-            subtitle = "Ignore ongoing / foreground-service notifications.",
+            title = stringResource(R.string.settings_skip_ongoing_title),
+            subtitle = stringResource(R.string.settings_skip_ongoing_subtitle),
             checked = state.skipOngoing,
             onCheckedChange = onSetSkipOngoing,
         )
@@ -441,15 +474,25 @@ private fun ExpiryControl(
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Text("Outbox expiry", style = MaterialTheme.typography.bodyLarge)
-            Text("$current h", style = MaterialTheme.typography.titleMedium)
+            Text(
+                stringResource(R.string.settings_expiry_title),
+                style = MaterialTheme.typography.bodyLarge,
+            )
+            Text(
+                stringResource(R.string.settings_expiry_value, current),
+                style = MaterialTheme.typography.titleMedium,
+            )
         }
         Row(verticalAlignment = Alignment.CenterVertically) {
             IconButton(
                 onClick = { onChange(current - 1) },
                 enabled = current > SettingsUiState.MIN_EXPIRY_HOURS,
             ) {
-                Icon(Icons.Filled.Clear, contentDescription = "Decrease", modifier = Modifier.size(18.dp))
+                Icon(
+                    Icons.Filled.Clear,
+                    contentDescription = stringResource(R.string.settings_expiry_decrease),
+                    modifier = Modifier.size(18.dp),
+                )
             }
             Slider(
                 value = sliderValue,
@@ -463,11 +506,15 @@ private fun ExpiryControl(
                 onClick = { onChange(current + 1) },
                 enabled = current < SettingsUiState.MAX_EXPIRY_HOURS,
             ) {
-                Icon(Icons.Filled.Add, contentDescription = "Increase", modifier = Modifier.size(18.dp))
+                Icon(
+                    Icons.Filled.Add,
+                    contentDescription = stringResource(R.string.settings_expiry_increase),
+                    modifier = Modifier.size(18.dp),
+                )
             }
         }
         Text(
-            text = "Undelivered items are dropped after this long.",
+            text = stringResource(R.string.settings_expiry_subtitle),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -490,21 +537,28 @@ private fun MaintenanceCard(
         // Listener health.
         StatusLine(
             ok = state.listenerEnabled,
-            text = if (state.listenerEnabled) "Notification access granted" else "Notification access off",
-            okText = "TeleForward can read notifications.",
-            problemText = "Forwarding won't work until access is granted.",
+            text = if (state.listenerEnabled) {
+                stringResource(R.string.settings_listener_on)
+            } else {
+                stringResource(R.string.settings_listener_off)
+            },
+            okText = stringResource(R.string.settings_listener_status_ok),
+            problemText = stringResource(R.string.settings_listener_status_problem),
         )
         OutlinedButton(
             onClick = { context.launchSafely(NotificationAccess.settingsIntent(context)) },
         ) {
-            Text("Open notification access")
+            Text(stringResource(R.string.settings_open_notification_access))
         }
 
         HorizontalDivider()
 
-        Text("Battery optimization", style = MaterialTheme.typography.bodyLarge)
         Text(
-            text = "Exempt TeleForward so delivery isn't delayed by Doze.",
+            stringResource(R.string.settings_battery_title),
+            style = MaterialTheme.typography.bodyLarge,
+        )
+        Text(
+            text = stringResource(R.string.settings_battery_subtitle),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -513,19 +567,22 @@ private fun MaintenanceCard(
                 context.launchSafely(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS))
             },
         ) {
-            Text("Battery optimization settings")
+            Text(stringResource(R.string.settings_battery_button))
         }
 
         HorizontalDivider()
 
-        Text("Delivery log", style = MaterialTheme.typography.bodyLarge)
+        Text(
+            stringResource(R.string.settings_delivery_log_title),
+            style = MaterialTheme.typography.bodyLarge,
+        )
         var confirmClearAll by remember { mutableStateOf(false) }
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             OutlinedButton(onClick = onClearDelivered) {
-                Text("Clear delivered")
+                Text(stringResource(R.string.settings_clear_delivered))
             }
             TextButton(onClick = { confirmClearAll = true }) {
-                Text("Clear all")
+                Text(stringResource(R.string.settings_clear_all))
             }
         }
         ActionStatusText(state.maintenanceAction)
@@ -533,20 +590,22 @@ private fun MaintenanceCard(
         if (confirmClearAll) {
             AlertDialog(
                 onDismissRequest = { confirmClearAll = false },
-                title = { Text("Clear the whole log?") },
+                title = { Text(stringResource(R.string.settings_clear_all_dialog_title)) },
                 text = {
-                    Text("This deletes every outbox row, including items still waiting to send.")
+                    Text(stringResource(R.string.settings_clear_all_dialog_message))
                 },
                 confirmButton = {
                     TextButton(onClick = {
                         confirmClearAll = false
                         onClearAll()
                     }) {
-                        Text("Clear all")
+                        Text(stringResource(R.string.settings_clear_all))
                     }
                 },
                 dismissButton = {
-                    TextButton(onClick = { confirmClearAll = false }) { Text("Cancel") }
+                    TextButton(onClick = { confirmClearAll = false }) {
+                        Text(stringResource(R.string.settings_cancel))
+                    }
                 },
             )
         }
@@ -566,9 +625,9 @@ private fun AboutCard(
 
     SettingsCard {
         Column {
-            Text("TeleForward", style = MaterialTheme.typography.bodyLarge)
+            Text(stringResource(R.string.app_name), style = MaterialTheme.typography.bodyLarge)
             Text(
-                text = "Version ${BuildConfig.VERSION_NAME}",
+                text = stringResource(R.string.settings_about_version, BuildConfig.VERSION_NAME),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -582,7 +641,7 @@ private fun AboutCard(
             FilledTonalButton(onClick = onCheckForUpdates, enabled = !checking) {
                 Icon(Icons.Filled.Refresh, contentDescription = null, modifier = Modifier.size(18.dp))
                 Spacer(Modifier.width(8.dp))
-                Text("Check for updates")
+                Text(stringResource(R.string.settings_check_for_updates))
             }
             if (checking) BusyIndicator()
         }
@@ -599,7 +658,7 @@ private fun AboutCard(
                 )
                 Spacer(Modifier.width(8.dp))
                 Text(
-                    "You're on the latest version (${update.current}).",
+                    stringResource(R.string.settings_update_up_to_date, update.current),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.primary,
                 )
@@ -617,7 +676,7 @@ private fun AboutCard(
                     )
                     Spacer(Modifier.width(8.dp))
                     Text(
-                        "Version ${update.latest} is available.",
+                        stringResource(R.string.settings_update_available, update.latest),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.primary,
                     )
@@ -627,7 +686,7 @@ private fun AboutCard(
                         context.launchSafely(Intent(Intent.ACTION_VIEW, Uri.parse(update.url)))
                     },
                 ) {
-                    Text("Open release")
+                    Text(stringResource(R.string.settings_update_open_release))
                 }
             }
 
@@ -640,7 +699,7 @@ private fun AboutCard(
                 )
                 Spacer(Modifier.width(8.dp))
                 Text(
-                    "Update check failed: ${update.message}",
+                    stringResource(R.string.settings_update_failed, update.message),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.error,
                 )
@@ -666,34 +725,28 @@ private fun RemoteActionsCard(
 ) {
     SettingsCard {
         SettingSwitchRow(
-            title = "Action buttons",
-            subtitle = "Add Dismiss / Mark read / Reply buttons under forwarded messages, and act on " +
-                "this device when you press them. Reply by replying to the forwarded message.",
+            title = stringResource(R.string.settings_action_buttons_title),
+            subtitle = stringResource(R.string.settings_action_buttons_subtitle),
             checked = state.remoteActionsEnabled,
             onCheckedChange = onSetRemoteActionsEnabled,
         )
         if (state.remoteActionsEnabled) {
             HorizontalDivider()
             SettingSwitchRow(
-                title = "Now playing control",
-                subtitle = "Media notifications are normally skipped. With this on, each media app " +
-                    "keeps ONE message in the chat — edited in place as the track changes — with its " +
-                    "own transport buttons, so you can control playback without a message per track.",
+                title = stringResource(R.string.settings_now_playing_title),
+                subtitle = stringResource(R.string.settings_now_playing_subtitle),
                 checked = state.nowPlayingEnabled,
                 onCheckedChange = onSetNowPlayingEnabled,
             )
             HorizontalDivider()
             SettingSwitchRow(
-                title = "Always listening",
-                subtitle = "Keep a permanent notification so presses act immediately. Off, the app " +
-                    "only listens for a few minutes after each forward — press a button later and it " +
-                    "may not arrive until the next one.",
+                title = stringResource(R.string.settings_always_on_title),
+                subtitle = stringResource(R.string.settings_always_on_subtitle),
                 checked = state.remoteActionsAlwaysOn,
                 onCheckedChange = onSetRemoteActionsAlwaysOn,
             )
             Text(
-                text = "Buttons only work while the notification is still on this device — once it's " +
-                    "gone, TeleForward replies that it's no longer available.",
+                text = stringResource(R.string.settings_remote_actions_footnote),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -719,24 +772,26 @@ private fun DiagnosticsCard(
             )
             Spacer(Modifier.width(12.dp))
             Text(
-                text = "Records full notification content (titles, messages, sender info) for " +
-                    "debugging. Off by default. Share the dump only with people you trust.",
+                text = stringResource(R.string.settings_diag_warning),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
 
         SettingSwitchRow(
-            title = "Capture diagnostic logs",
-            subtitle = "Logs every notification from all apps while on.",
+            title = stringResource(R.string.settings_diag_capture_title),
+            subtitle = stringResource(R.string.settings_diag_capture_subtitle),
             checked = state.diagnosticsEnabled,
             onCheckedChange = onSetDiagnosticsEnabled,
         )
 
         HorizontalDivider()
 
-        val recordsLabel = "Captured: ${state.diagRecordCount} " +
-            if (state.diagRecordCount == 1) "record" else "records"
+        val recordsLabel = if (state.diagRecordCount == 1) {
+            stringResource(R.string.settings_diag_captured_one)
+        } else {
+            stringResource(R.string.settings_diag_captured_other, state.diagRecordCount)
+        }
         Text(
             text = recordsLabel,
             style = MaterialTheme.typography.bodySmall,
@@ -755,7 +810,7 @@ private fun DiagnosticsCard(
             ) {
                 Icon(Icons.Filled.Share, contentDescription = null, modifier = Modifier.size(18.dp))
                 Spacer(Modifier.width(8.dp))
-                Text("Dump logs (share)")
+                Text(stringResource(R.string.settings_diag_dump))
             }
             OutlinedButton(
                 onClick = { confirmClear = true },
@@ -763,7 +818,7 @@ private fun DiagnosticsCard(
             ) {
                 Icon(Icons.Filled.Clear, contentDescription = null, modifier = Modifier.size(18.dp))
                 Spacer(Modifier.width(8.dp))
-                Text("Clear logs")
+                Text(stringResource(R.string.settings_diag_clear))
             }
             if (dumping) BusyIndicator()
         }
@@ -772,20 +827,27 @@ private fun DiagnosticsCard(
         if (confirmClear) {
             AlertDialog(
                 onDismissRequest = { confirmClear = false },
-                title = { Text("Clear diagnostic logs?") },
+                title = { Text(stringResource(R.string.settings_diag_clear_dialog_title)) },
                 text = {
-                    Text("This permanently deletes all ${state.diagRecordCount} captured records.")
+                    Text(
+                        stringResource(
+                            R.string.settings_diag_clear_dialog_message,
+                            state.diagRecordCount,
+                        ),
+                    )
                 },
                 confirmButton = {
                     TextButton(onClick = {
                         confirmClear = false
                         onClearDiagnostics()
                     }) {
-                        Text("Clear logs")
+                        Text(stringResource(R.string.settings_diag_clear))
                     }
                 },
                 dismissButton = {
-                    TextButton(onClick = { confirmClear = false }) { Text("Cancel") }
+                    TextButton(onClick = { confirmClear = false }) {
+                        Text(stringResource(R.string.settings_cancel))
+                    }
                 },
             )
         }
@@ -872,7 +934,10 @@ private fun ActionStatusText(action: ActionState) {
         ActionState.Running -> Row(verticalAlignment = Alignment.CenterVertically) {
             BusyIndicator()
             Spacer(Modifier.width(8.dp))
-            Text("Working…", style = MaterialTheme.typography.bodyMedium)
+            Text(
+                stringResource(R.string.settings_working),
+                style = MaterialTheme.typography.bodyMedium,
+            )
         }
 
         is ActionState.Success -> Row(verticalAlignment = Alignment.CenterVertically) {

@@ -35,6 +35,7 @@ class NowPlayingController @Inject constructor(
     private val sender: TelegramSender,
     private val keyboards: RemoteActionKeyboards,
     private val pinner: ChatPinner,
+    private val strings: TelegramStrings,
     private val messageBuilder: MessageBuilder,
     private val settings: SettingsRepository,
     private val workManager: WorkManager,
@@ -158,7 +159,7 @@ class NowPlayingController @Inject constructor(
     }
 
     /** Playback ended: retire the control so a dead message can't sit there offering buttons. */
-    suspend fun clear(packageName: String, stoppedLabel: String = "⏹ Playback ended") {
+    suspend fun clear(packageName: String, stoppedLabel: String = strings.playbackEnded) {
         runCatching {
             val chatId = settings.chatId.first() ?: return
             mutex.withLock {
@@ -320,7 +321,7 @@ class NowPlayingController @Inject constructor(
     ): String =
         buildString {
             append(trackKey).append('|').append(notificationKey)
-            remoteButtons(actions, includeDismiss = false, stableLabels = true).forEach {
+            remoteButtons(actions, strings.buttonLabels, includeDismiss = false, stableLabels = true).forEach {
                 append('|').append(it.actionIndex).append(':').append(it.label)
             }
         }

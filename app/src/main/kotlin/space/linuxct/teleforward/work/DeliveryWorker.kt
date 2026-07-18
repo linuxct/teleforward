@@ -25,6 +25,7 @@ import space.linuxct.teleforward.data.repo.OutboxRepository
 import space.linuxct.teleforward.data.settings.SettingsRepository
 import space.linuxct.teleforward.data.telegram.MediaForwardController
 import space.linuxct.teleforward.data.telegram.MessageBuilder
+import space.linuxct.teleforward.data.telegram.TelegramStrings
 import space.linuxct.teleforward.data.telegram.RemoteActionKeyboards
 import space.linuxct.teleforward.data.telegram.SendResult
 import space.linuxct.teleforward.data.telegram.TelegramSender
@@ -67,6 +68,7 @@ class DeliveryWorker @AssistedInject constructor(
     private val remoteActionDiag: RemoteActionDiag,
     private val actionGateway: NotificationActionGateway,
     private val mediaForwardController: MediaForwardController,
+    private val telegramStrings: TelegramStrings,
     private val workManager: WorkManager,
 ) : CoroutineWorker(appContext, params) {
 
@@ -90,7 +92,7 @@ class DeliveryWorker @AssistedInject constructor(
         if (chatId == null) {
             // Nothing paired yet: fail deliverable rows with an actionable log entry rather than
             // spinning forever against a missing recipient.
-            batch.forEach { outboxRepository.markFailed(it.outbox.id, NO_RECIPIENT_ERROR) }
+            batch.forEach { outboxRepository.markFailed(it.outbox.id, telegramStrings.noRecipientPaired) }
             return@withContext Result.success()
         }
 
@@ -192,7 +194,7 @@ class DeliveryWorker @AssistedInject constructor(
     private suspend fun buildActionKeyboard(row: OutboxEntity, chatId: Long, now: Long): String? {
         val enabled = settings.remoteActionsEnabled.first()
         val actions = NotificationActions.decode(row.actionsJson)
-        val buttons = if (enabled && row.notificationKey != null) remoteButtons(actions) else emptyList()
+        val buttons = if (enabled && row.notificationKey != null) remoteButtons(actions, telegramStrings.buttonLabels) else emptyList()
 
         // Diagnostics: explains a forward that arrived with no buttons.
         remoteActionDiag.attach(
@@ -405,6 +407,5 @@ class DeliveryWorker @AssistedInject constructor(
          */
         private const val LINK_RESOLVE_TIMEOUT_MS = 12_000L
 
-        private const val NO_RECIPIENT_ERROR = "no recipient paired"
     }
 }

@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="notification_listener_label">Acceso a notificaciones de TeleForward</string>
+
+    <!-- Servicio en primer plano que sigue atento a las pulsaciones de botones desde Telegram. -->
+    <string name="remote_actions_channel_name">Acciones remotas</string>
+    <string name="remote_actions_channel_description">Se muestra mientras TeleForward está atento a los botones de acción que pulsas en Telegram.</string>
+    <string name="remote_actions_ongoing_title">Escuchando acciones</string>
+    <string name="remote_actions_ongoing_text">Los botones que pulsas en Telegram actúan en este dispositivo.</string>
+
+    <!-- Texto enviado AL chat de Telegram: etiquetas de botones, resultados, avisos. -->
+    <string name="tg_button_dismiss">🗑 Descartar</string>
+    <string name="tg_button_play_pause">⏯ Reproducir/Pausar</string>
+    <string name="tg_button_reply_fallback">Responder</string>
+    <string name="tg_button_action_fallback">Acción</string>
+
+    <string name="tg_reply_prompt">✍️ Responde a este mensaje y lo enviaré desde tu móvil.</string>
+    <string name="tg_reply_prompt_placeholder">Escribe tu respuesta…</string>
+    <string name="tg_reply_fallback_hint">Responde al mensaje reenviado y lo enviaré</string>
+
+    <string name="tg_button_expired">Este botón ha caducado</string>
+    <string name="tg_button_superseded">Estos botones se han sustituido: usa el mensaje más reciente</string>
+    <string name="tg_stopped_mid_press">TeleForward dejó de escuchar a mitad de la pulsación: inténtalo de nuevo</string>
+    <string name="tg_generic_failure">Algo ha fallado al procesar esa pulsación</string>
+    <string name="tg_unsupported_action">Acción no admitida</string>
+    <string name="tg_no_reply_action">⚠️ Ese mensaje no tiene acción de respuesta: esta aplicación no admite respuestas desde aquí.</string>
+
+    <string name="tg_not_authorised">No autorizado</string>
+    <string name="tg_no_chat">No se ha podido saber de qué chat viene esa pulsación</string>
+    <string name="tg_not_paired">TeleForward no está vinculado a ningún chat: vuelve a vincularlo en Ajustes</string>
+
+    <string name="tg_dismissed">Descartada</string>
+    <string name="tg_couldnt_complete">No se ha podido completar: %1$s</string>
+    <string name="tg_device_timeout">el móvil no ha respondido en %1$d s</string>
+    <string name="tg_resolved_already_gone">✓ Ya no está</string>
+
+    <string name="tg_outcome_notification_gone">La notificación ya no está en el dispositivo</string>
+    <string name="tg_outcome_listener_unavailable">El acceso a las notificaciones no está conectado</string>
+    <string name="tg_outcome_action_unavailable">Esa acción ya no está disponible</string>
+    <string name="tg_outcome_failed">Error: %1$s</string>
+
+    <string name="tg_reply_sent">✅ Enviado</string>
+    <string name="tg_reply_gone">⚠️ Esa notificación ya no está: ya no se puede responder</string>
+    <string name="tg_reply_listener_unavailable">⚠️ El acceso a las notificaciones no está conectado</string>
+    <string name="tg_reply_unavailable">⚠️ No se puede responder a ese chat desde aquí</string>
+    <string name="tg_reply_failed">⚠️ Error: %1$s</string>
+
+    <string name="tg_late_press_message">⏳ Esa pulsación me ha llegado demasiado tarde para que Telegram muestre el resultado en el botón.\n\nResultado: %1$s\n\nPor qué: pulsaste el botón mientras TeleForward no estaba escuchando. Comprueba Telegram durante unos minutos después de cada reenvío y luego unas cuantas veces más a lo largo de las dos horas siguientes; una pulsación fuera de esos intervalos espera a la siguiente comprobación.\nPara que las pulsaciones surtan efecto al instante: Ajustes → Acciones remotas → «Escucha permanente».</string>
+    <string name="tg_undelivered_message">⚠️ No he podido mostrar el resultado en el botón.\n\nResultado: %1$s\nMotivo: %2$s</string>
+    <string name="tg_reason_unknown">desconocido</string>
+
+    <!-- Entrecomillado para conservar el espacio final: Android recorta los espacios sin comillas. -->
+    <string name="tg_link_prefix">"Enlace: "</string>
+    <string name="tg_playback_ended">⏹ Reproducción finalizada</string>
+    <string name="tg_no_recipient_paired">no hay destinatario vinculado</string>
+</resources>

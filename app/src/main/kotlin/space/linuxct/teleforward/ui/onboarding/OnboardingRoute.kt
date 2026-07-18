@@ -43,6 +43,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
@@ -51,6 +52,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import space.linuxct.teleforward.R
 import space.linuxct.teleforward.designsystem.AppScaffold
 
 /**
@@ -91,7 +93,7 @@ fun OnboardingRoute(onFinished: () -> Unit) {
         viewModel.onPostNotificationsResult(granted)
     }
 
-    AppScaffold(title = "Set up TeleForward") { padding ->
+    AppScaffold(title = stringResource(R.string.onboarding_title)) { padding ->
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -112,7 +114,11 @@ fun OnboardingRoute(onFinished: () -> Unit) {
                 verticalArrangement = Arrangement.spacedBy(16.dp),
             ) {
                 Text(
-                    text = "Step ${state.stepNumber} of ${state.totalSteps}",
+                    text = stringResource(
+                        R.string.onboarding_step_counter,
+                        state.stepNumber,
+                        state.totalSteps,
+                    ),
                     style = MaterialTheme.typography.labelLarge,
                     color = MaterialTheme.colorScheme.primary,
                 )
@@ -127,7 +133,7 @@ fun OnboardingRoute(onFinished: () -> Unit) {
                             }.onFailure {
                                 Toast.makeText(
                                     context,
-                                    "Couldn't open notification settings.",
+                                    context.getString(R.string.onboarding_open_settings_failed),
                                     Toast.LENGTH_SHORT,
                                 ).show()
                             }
@@ -189,13 +195,11 @@ private tailrec fun Context.findActivity(): Activity? = when (this) {
 @Composable
 private fun WelcomeStep() {
     Text(
-        text = "Mirror your notifications to Telegram",
+        text = stringResource(R.string.onboarding_welcome_title),
         style = MaterialTheme.typography.headlineSmall,
     )
     Text(
-        text = "TeleForward forwards the notifications you choose to a single Telegram chat you " +
-            "control. This app is the bot — it talks directly to Telegram, with no server in " +
-            "between.",
+        text = stringResource(R.string.onboarding_welcome_body),
         style = MaterialTheme.typography.bodyLarge,
     )
     ElevatedCard(modifier = Modifier.fillMaxWidth()) {
@@ -203,11 +207,12 @@ private fun WelcomeStep() {
             modifier = Modifier.padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            Text("Your privacy", style = MaterialTheme.typography.titleMedium)
             Text(
-                text = "Notification content is only read for the apps and channels you enable, " +
-                    "and only to forward it. Your bot token is stored in the Android Keystore " +
-                    "and never leaves your device except to reach Telegram.",
+                text = stringResource(R.string.onboarding_welcome_privacy_title),
+                style = MaterialTheme.typography.titleMedium,
+            )
+            Text(
+                text = stringResource(R.string.onboarding_welcome_privacy_body),
                 style = MaterialTheme.typography.bodyMedium,
             )
         }
@@ -219,20 +224,22 @@ private fun NotificationAccessStep(
     granted: Boolean,
     onOpenSettings: () -> Unit,
 ) {
-    Text("Grant notification access", style = MaterialTheme.typography.headlineSmall)
     Text(
-        text = "TeleForward needs notification access to read incoming notifications. Open system " +
-            "settings, enable TeleForward, then return here.",
+        text = stringResource(R.string.onboarding_access_title),
+        style = MaterialTheme.typography.headlineSmall,
+    )
+    Text(
+        text = stringResource(R.string.onboarding_access_body),
         style = MaterialTheme.typography.bodyLarge,
     )
     Button(onClick = onOpenSettings, modifier = Modifier.fillMaxWidth()) {
-        Text("Open notification access settings")
+        Text(stringResource(R.string.onboarding_access_open_settings_button))
     }
     if (granted) {
-        StatusMessage("Notification access granted.")
+        StatusMessage(stringResource(R.string.onboarding_access_granted))
     } else {
         StatusMessage(
-            "Not granted yet. This screen updates automatically when you come back.",
+            stringResource(R.string.onboarding_access_not_granted),
             error = false,
         )
     }
@@ -246,23 +253,33 @@ private fun BotTokenStep(
 ) {
     var revealed by rememberSaveable { mutableStateOf(false) }
 
-    Text("Connect your bot", style = MaterialTheme.typography.headlineSmall)
     Text(
-        text = "Create a bot with @BotFather in Telegram and paste its token here. We validate it " +
-            "with Telegram and store it securely on this device.",
+        text = stringResource(R.string.onboarding_token_title),
+        style = MaterialTheme.typography.headlineSmall,
+    )
+    Text(
+        text = stringResource(R.string.onboarding_token_body),
         style = MaterialTheme.typography.bodyLarge,
     )
     OutlinedTextField(
         value = state.tokenInput,
         onValueChange = onTokenChange,
-        label = { Text("Bot token") },
+        label = { Text(stringResource(R.string.onboarding_token_label)) },
         singleLine = true,
         isError = state.tokenError != null,
         visualTransformation = if (revealed) VisualTransformation.None else PasswordVisualTransformation(),
         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
         trailingIcon = {
             TextButton(onClick = { revealed = !revealed }) {
-                Text(if (revealed) "Hide" else "Show")
+                Text(
+                    stringResource(
+                        if (revealed) {
+                            R.string.onboarding_token_hide
+                        } else {
+                            R.string.onboarding_token_show
+                        },
+                    ),
+                )
             }
         },
         supportingText = state.tokenError?.let { { Text(it) } },
@@ -276,14 +293,15 @@ private fun BotTokenStep(
         if (state.validatingToken) {
             InlineSpinner()
             Spacer(Modifier.width(8.dp))
-            Text("Validating…")
+            Text(stringResource(R.string.onboarding_token_validating))
         } else {
-            Text("Validate token")
+            Text(stringResource(R.string.onboarding_token_validate_button))
         }
     }
     if (state.tokenValidated) {
-        val handle = state.botUsername?.let { "@$it" } ?: "your bot"
-        StatusMessage("Connected to $handle.")
+        val handle = state.botUsername?.let { "@$it" }
+            ?: stringResource(R.string.onboarding_token_bot_fallback)
+        StatusMessage(stringResource(R.string.onboarding_token_connected, handle))
     }
 }
 
@@ -295,15 +313,16 @@ private fun PairRecipientStep(
     onApplyManual: () -> Unit,
     onSendTest: () -> Unit,
 ) {
-    Text("Pair your chat", style = MaterialTheme.typography.headlineSmall)
+    Text(
+        text = stringResource(R.string.onboarding_pair_title),
+        style = MaterialTheme.typography.headlineSmall,
+    )
     val link = state.botUsername?.let { "t.me/$it" }
     Text(
         text = if (link != null) {
-            "Open your bot at $link and press Start. Then tap Capture below and TeleForward will " +
-                "pick up your chat automatically."
+            stringResource(R.string.onboarding_pair_body_with_link, link)
         } else {
-            "Open your bot in Telegram and press Start. Then tap Capture below and TeleForward " +
-                "will pick up your chat automatically."
+            stringResource(R.string.onboarding_pair_body)
         },
         style = MaterialTheme.typography.bodyLarge,
     )
@@ -316,20 +335,20 @@ private fun PairRecipientStep(
         if (state.capturing) {
             InlineSpinner()
             Spacer(Modifier.width(8.dp))
-            Text("Capturing…")
+            Text(stringResource(R.string.onboarding_pair_capturing))
         } else {
-            Text("Capture chat")
+            Text(stringResource(R.string.onboarding_pair_capture_button))
         }
     }
 
     Text(
-        text = "Or enter a chat id manually",
+        text = stringResource(R.string.onboarding_pair_manual_title),
         style = MaterialTheme.typography.titleMedium,
     )
     OutlinedTextField(
         value = state.manualChatIdInput,
         onValueChange = onManualChange,
-        label = { Text("Numeric chat id") },
+        label = { Text(stringResource(R.string.onboarding_pair_manual_label)) },
         singleLine = true,
         isError = state.manualChatIdError != null,
         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
@@ -337,15 +356,16 @@ private fun PairRecipientStep(
         modifier = Modifier.fillMaxWidth(),
     )
     OutlinedButton(onClick = onApplyManual, modifier = Modifier.fillMaxWidth()) {
-        Text("Use this chat id")
+        Text(stringResource(R.string.onboarding_pair_manual_apply_button))
     }
 
     state.pairingError?.let { StatusMessage(it, error = true) }
     state.pairingInfo?.let { StatusMessage(it) }
 
     if (state.chatId != null) {
-        val who = state.chatDisplayName ?: "chat ${state.chatId}"
-        StatusMessage("Recipient: $who")
+        val who = state.chatDisplayName
+            ?: stringResource(R.string.onboarding_pair_chat_fallback, state.chatId)
+        StatusMessage(stringResource(R.string.onboarding_pair_recipient, who))
         Button(
             onClick = onSendTest,
             enabled = !state.sendingTest,
@@ -354,9 +374,9 @@ private fun PairRecipientStep(
             if (state.sendingTest) {
                 InlineSpinner()
                 Spacer(Modifier.width(8.dp))
-                Text("Sending…")
+                Text(stringResource(R.string.onboarding_pair_sending))
             } else {
-                Text("Send test message")
+                Text(stringResource(R.string.onboarding_pair_send_test_button))
             }
         }
         state.testError?.let { StatusMessage(it, error = true) }
@@ -374,9 +394,12 @@ private fun FeaturesStep(
     remoteActionsEnabled: Boolean,
     onSetRemoteActionsEnabled: (Boolean) -> Unit,
 ) {
-    Text("What you'll get", style = MaterialTheme.typography.headlineSmall)
     Text(
-        text = "Two things are switched on already. You can change both later.",
+        text = stringResource(R.string.onboarding_features_title),
+        style = MaterialTheme.typography.headlineSmall,
+    )
+    Text(
+        text = stringResource(R.string.onboarding_features_body),
         style = MaterialTheme.typography.bodyLarge,
     )
 
@@ -385,12 +408,12 @@ private fun FeaturesStep(
             modifier = Modifier.padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            Text("✨ Magic links", style = MaterialTheme.typography.titleMedium)
             Text(
-                text = "For some apps TeleForward works out the link the notification would have " +
-                    "opened and adds it to the message — the YouTube video, the Apple Music song, " +
-                    "the WhatsApp chat. It's best-effort: when it can't be sure, it adds nothing " +
-                    "rather than the wrong link. Turn it off per app under Apps.",
+                text = stringResource(R.string.onboarding_features_magic_links_title),
+                style = MaterialTheme.typography.titleMedium,
+            )
+            Text(
+                text = stringResource(R.string.onboarding_features_magic_links_body),
                 style = MaterialTheme.typography.bodyMedium,
             )
         }
@@ -403,11 +426,12 @@ private fun FeaturesStep(
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(modifier = Modifier.weight(1f)) {
-                    Text("🎛️ Action buttons", style = MaterialTheme.typography.titleMedium)
                     Text(
-                        text = "Buttons under each forwarded message that act on this phone — " +
-                            "dismiss it, mark it read, or whatever that app offers. Reply by " +
-                            "replying to the message in Telegram.",
+                        text = stringResource(R.string.onboarding_features_actions_title),
+                        style = MaterialTheme.typography.titleMedium,
+                    )
+                    Text(
+                        text = stringResource(R.string.onboarding_features_actions_body),
                         style = MaterialTheme.typography.bodyMedium,
                         modifier = Modifier.padding(top = 4.dp),
                     )
@@ -416,9 +440,7 @@ private fun FeaturesStep(
                 Switch(checked = remoteActionsEnabled, onCheckedChange = onSetRemoteActionsEnabled)
             }
             Text(
-                text = "To catch a button press, the app briefly checks Telegram for a few minutes " +
-                    "after each forward. Buttons only work while the notification is still on the " +
-                    "phone.",
+                text = stringResource(R.string.onboarding_features_actions_note),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -426,8 +448,7 @@ private fun FeaturesStep(
     }
 
     Text(
-        text = "Also in Settings: \"Always listening\" for instant button presses, and a \"Now " +
-            "playing\" control that turns media notifications into one remote-control message.",
+        text = stringResource(R.string.onboarding_features_settings_note),
         style = MaterialTheme.typography.bodySmall,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
     )
@@ -438,17 +459,19 @@ private fun NotificationsPermissionStep(
     granted: Boolean,
     onRequest: () -> Unit,
 ) {
-    Text("Allow notifications", style = MaterialTheme.typography.headlineSmall)
     Text(
-        text = "Allow TeleForward to post its own status notification so you can see forwarding " +
-            "is running. This is optional — you can skip it.",
+        text = stringResource(R.string.onboarding_post_notifications_title),
+        style = MaterialTheme.typography.headlineSmall,
+    )
+    Text(
+        text = stringResource(R.string.onboarding_post_notifications_body),
         style = MaterialTheme.typography.bodyLarge,
     )
     if (granted) {
-        StatusMessage("Notifications allowed.")
+        StatusMessage(stringResource(R.string.onboarding_post_notifications_granted))
     } else {
         Button(onClick = onRequest, modifier = Modifier.fillMaxWidth()) {
-            Text("Allow notifications")
+            Text(stringResource(R.string.onboarding_post_notifications_button))
         }
     }
 }
@@ -531,7 +554,7 @@ private fun BottomBar(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         if (showBack) {
-            TextButton(onClick = onBack) { Text("Back") }
+            TextButton(onClick = onBack) { Text(stringResource(R.string.onboarding_back)) }
         }
         Spacer(Modifier.weight(1f))
         Button(
@@ -541,9 +564,13 @@ private fun BottomBar(
             if (finishing) {
                 InlineSpinner()
                 Spacer(Modifier.width(8.dp))
-                Text("Finishing…")
+                Text(stringResource(R.string.onboarding_finishing))
             } else {
-                Text(if (isLastStep) "Finish" else "Next")
+                Text(
+                    stringResource(
+                        if (isLastStep) R.string.onboarding_finish else R.string.onboarding_next,
+                    ),
+                )
             }
         }
     }

@@ -47,6 +47,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -56,6 +58,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil3.compose.AsyncImage
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import space.linuxct.teleforward.R
 import space.linuxct.teleforward.designsystem.AppScaffold
 
 /**
@@ -96,13 +99,19 @@ private fun AppListScreen(
     onOpenLog: () -> Unit,
 ) {
     AppScaffold(
-        title = "Apps",
+        title = stringResource(R.string.apps_title),
         actions = {
             IconButton(onClick = onOpenLog) {
-                Icon(Icons.AutoMirrored.Filled.List, contentDescription = "Delivery log")
+                Icon(
+                    Icons.AutoMirrored.Filled.List,
+                    contentDescription = stringResource(R.string.apps_action_delivery_log),
+                )
             }
             IconButton(onClick = onOpenSettings) {
-                Icon(Icons.Filled.Settings, contentDescription = "Settings")
+                Icon(
+                    Icons.Filled.Settings,
+                    contentDescription = stringResource(R.string.apps_action_settings),
+                )
             }
         },
     ) { padding ->
@@ -117,12 +126,15 @@ private fun AppListScreen(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 16.dp, vertical = 8.dp),
-                placeholder = { Text("Search apps") },
+                placeholder = { Text(stringResource(R.string.apps_search_placeholder)) },
                 leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null) },
                 trailingIcon = {
                     if (state.query.isNotEmpty()) {
                         IconButton(onClick = { onQueryChange("") }) {
-                            Icon(Icons.Filled.Clear, contentDescription = "Clear search")
+                            Icon(
+                                Icons.Filled.Clear,
+                                contentDescription = stringResource(R.string.apps_search_clear),
+                            )
                         }
                     }
                 },
@@ -203,7 +215,7 @@ private fun AppRow(
                 Spacer(Modifier.width(4.dp))
                 Icon(
                     imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
-                    contentDescription = "Open channels",
+                    contentDescription = stringResource(R.string.apps_open_channels),
                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
@@ -265,15 +277,19 @@ private fun EmptyApps(filtered: Boolean) {
                 modifier = Modifier.size(48.dp),
             )
             Text(
-                text = if (filtered) "No apps match your search" else "No apps yet",
+                text = if (filtered) {
+                    stringResource(R.string.apps_empty_filtered_title)
+                } else {
+                    stringResource(R.string.apps_empty_title)
+                },
                 style = MaterialTheme.typography.titleMedium,
                 modifier = Modifier.padding(top = 16.dp),
             )
             Text(
                 text = if (filtered) {
-                    "Try a different search or filter."
+                    stringResource(R.string.apps_empty_filtered_body)
                 } else {
-                    "Apps appear here once a notification from them has been observed."
+                    stringResource(R.string.apps_empty_body)
                 },
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -291,29 +307,31 @@ private fun CenteredBox(content: @Composable () -> Unit) {
     ) { content() }
 }
 
+@Composable
 private fun AppFilter.displayName(): String = when (this) {
-    AppFilter.ALL -> "All"
-    AppFilter.ENABLED -> "Enabled"
-    AppFilter.SEEN -> "Seen"
+    AppFilter.ALL -> stringResource(R.string.apps_filter_all)
+    AppFilter.ENABLED -> stringResource(R.string.apps_filter_enabled)
+    AppFilter.SEEN -> stringResource(R.string.apps_filter_seen)
 }
 
-private fun AppRowUi.supportingText(): String = buildString {
+@Composable
+private fun AppRowUi.supportingText(): String {
     val seenAt = lastSeen
-    if (isSeen && seenAt != null) {
-        append("Seen ")
-        append(
-            DateUtils.getRelativeTimeSpanString(
-                seenAt,
-                System.currentTimeMillis(),
-                DateUtils.MINUTE_IN_MILLIS,
-            ),
-        )
+    val seenPart = if (isSeen && seenAt != null) {
+        val relative = DateUtils.getRelativeTimeSpanString(
+            seenAt,
+            System.currentTimeMillis(),
+            DateUtils.MINUTE_IN_MILLIS,
+        ).toString()
+        stringResource(R.string.apps_last_seen, relative)
     } else {
-        append("Not seen yet")
+        stringResource(R.string.apps_not_seen)
     }
-    if (enabledChannelCount > 0) {
-        append(" · ")
-        append(enabledChannelCount)
-        append(if (enabledChannelCount == 1) " channel on" else " channels on")
-    }
+    if (enabledChannelCount == 0) return seenPart
+    val channelsPart = pluralStringResource(
+        R.plurals.apps_channels_on,
+        enabledChannelCount,
+        enabledChannelCount,
+    )
+    return stringResource(R.string.apps_supporting_separator, seenPart, channelsPart)
 }

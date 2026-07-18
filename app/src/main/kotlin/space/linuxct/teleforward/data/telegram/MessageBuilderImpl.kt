@@ -17,7 +17,9 @@ import javax.inject.Singleton
  * reserved so a long body never pushes it out.
  */
 @Singleton
-class MessageBuilderImpl @Inject constructor() : MessageBuilder {
+class MessageBuilderImpl @Inject constructor(
+    private val strings: TelegramStrings,
+) : MessageBuilder {
 
     private val timeFormatter: DateTimeFormatter =
         DateTimeFormatter.ofPattern(TIME_PATTERN).withZone(ZoneId.systemDefault())
@@ -38,7 +40,7 @@ class MessageBuilderImpl @Inject constructor() : MessageBuilder {
         if (cleanUrl.isEmpty()) return text
 
         val limit = if (isCaption) MessageBuilder.CAPTION_LIMIT else MessageBuilder.TEXT_LIMIT
-        val linkLine = "$LINK_PREFIX${escapeHtml(cleanUrl)}"
+        val linkLine = "${strings.linkPrefix}${escapeHtml(cleanUrl)}"
         if (text.isEmpty()) return linkLine
 
         // Reserve the link line plus its leading newline; trim the existing text into what's left.
@@ -227,7 +229,7 @@ class MessageBuilderImpl @Inject constructor() : MessageBuilder {
     /** Final `Link: <url>` line (HTML-escaped url; Telegram auto-links it), or "" when absent. */
     private fun formatLinkLine(extraLink: String?): String {
         if (extraLink.isNullOrBlank()) return ""
-        return "$LINK_PREFIX${escapeHtml(extraLink.trim())}"
+        return "${strings.linkPrefix}${escapeHtml(extraLink.trim())}"
     }
 
     /**
@@ -260,7 +262,6 @@ class MessageBuilderImpl @Inject constructor() : MessageBuilder {
         const val SEPARATOR = " · " // " · "
         const val ELLIPSIS = "…" // …
         const val TAG_B_LEN = 7 // "<b>" + "</b>"
-        const val LINK_PREFIX = "Link: "
 
         /** Upper bound on Tier-0 links appended to a single message (keeps the forward readable). */
         const val MAX_EXTRACTED_LINKS = 5

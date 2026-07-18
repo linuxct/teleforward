@@ -1,6 +1,7 @@
 package space.linuxct.teleforward.ui.log
 
 import android.text.format.DateUtils
+import androidx.annotation.StringRes
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -31,10 +32,13 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import space.linuxct.teleforward.R
 import space.linuxct.teleforward.data.db.entity.OutboxStatus
 import space.linuxct.teleforward.designsystem.AppScaffold
 
@@ -67,11 +71,11 @@ private fun DeliveryLogScreen(
 ) {
     val hasSent = state.rows.any { it.status == OutboxStatus.SENT }
     AppScaffold(
-        title = "Delivery log",
+        title = stringResource(R.string.log_title),
         onBack = onBack,
         actions = {
             TextButton(onClick = onClearSent, enabled = hasSent) {
-                Text("Clear")
+                Text(stringResource(R.string.log_action_clear))
             }
         },
     ) { padding ->
@@ -106,12 +110,12 @@ private fun EmptyState(padding: PaddingValues) {
     ) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             Text(
-                text = "No deliveries yet",
+                text = stringResource(R.string.log_empty_title),
                 style = MaterialTheme.typography.titleMedium,
             )
             Spacer(Modifier.size(8.dp))
             Text(
-                text = "Forwarded notifications will show up here with their delivery status.",
+                text = stringResource(R.string.log_empty_body),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -151,7 +155,9 @@ private fun LogRowCard(
             Row(verticalAlignment = Alignment.Top) {
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        text = row.appLabel + (row.channelName?.let { " · $it" } ?: ""),
+                        text = row.channelName
+                            ?.let { stringResource(R.string.log_app_channel, row.appLabel, it) }
+                            ?: row.appLabel,
                         style = MaterialTheme.typography.labelLarge,
                         color = MaterialTheme.colorScheme.primary,
                         maxLines = 1,
@@ -202,7 +208,7 @@ private fun LogRowCard(
                             modifier = Modifier.size(18.dp),
                         )
                         Spacer(Modifier.width(8.dp))
-                        Text("Retry")
+                        Text(stringResource(R.string.log_action_retry))
                     }
                 }
             }
@@ -233,7 +239,7 @@ private fun StatusChip(status: OutboxStatus) {
         shape = RoundedCornerShape(50),
     ) {
         Text(
-            text = status.label,
+            text = stringResource(status.labelRes()),
             style = MaterialTheme.typography.labelMedium,
             modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp),
         )
@@ -249,21 +255,21 @@ private fun ImageCountBadge(count: Int) {
         shape = RoundedCornerShape(50),
     ) {
         Text(
-            text = if (count == 1) "1 image" else "$count images",
+            text = pluralStringResource(R.plurals.log_image_count, count, count),
             style = MaterialTheme.typography.labelMedium,
             modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
         )
     }
 }
 
-private val OutboxStatus.label: String
-    get() = when (this) {
-        OutboxStatus.PENDING -> "Pending"
-        OutboxStatus.SENDING -> "Sending"
-        OutboxStatus.SENT -> "Sent"
-        OutboxStatus.FAILED -> "Failed"
-        OutboxStatus.EXPIRED -> "Expired"
-    }
+@StringRes
+private fun OutboxStatus.labelRes(): Int = when (this) {
+    OutboxStatus.PENDING -> R.string.log_status_pending
+    OutboxStatus.SENDING -> R.string.log_status_sending
+    OutboxStatus.SENT -> R.string.log_status_sent
+    OutboxStatus.FAILED -> R.string.log_status_failed
+    OutboxStatus.EXPIRED -> R.string.log_status_expired
+}
 
 private data class ChipColors(val container: Color, val content: Color)
 

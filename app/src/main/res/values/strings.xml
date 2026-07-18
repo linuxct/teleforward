@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">TeleForward</string>
+    <string name="app_name" translatable="false">TeleForward</string>
     <string name="notification_listener_label">TeleForward notification access</string>
 
     <!-- Foreground service that keeps listening for remote action button presses from Telegram. -->
@@ -8,4 +8,50 @@
     <string name="remote_actions_channel_description">Shown while TeleForward is listening for action buttons you press in Telegram.</string>
     <string name="remote_actions_ongoing_title">Listening for actions</string>
     <string name="remote_actions_ongoing_text">Buttons you press in Telegram act on this device.</string>
+
+    <!-- Text sent INTO the Telegram chat: button labels, outcomes, prompts. -->
+    <string name="tg_button_dismiss">🗑 Dismiss</string>
+    <string name="tg_button_play_pause">⏯ Play/Pause</string>
+    <string name="tg_button_reply_fallback">Reply</string>
+    <string name="tg_button_action_fallback">Action</string>
+
+    <string name="tg_reply_prompt">✍️ Reply to this message and I\'ll send it from your phone.</string>
+    <string name="tg_reply_prompt_placeholder">Type your reply…</string>
+    <string name="tg_reply_fallback_hint">Reply to the forwarded message and I\'ll send it</string>
+
+    <string name="tg_button_expired">This button has expired</string>
+    <string name="tg_button_superseded">These buttons were replaced — use the newest message</string>
+    <string name="tg_stopped_mid_press">TeleForward stopped listening mid-press — try again</string>
+    <string name="tg_generic_failure">Something went wrong handling that press</string>
+    <string name="tg_unsupported_action">Unsupported action</string>
+    <string name="tg_no_reply_action">⚠️ That message has no reply action — this app doesn\'t accept replies from here.</string>
+
+    <string name="tg_not_authorised">Not authorised</string>
+    <string name="tg_no_chat">Couldn\'t tell which chat that press came from</string>
+    <string name="tg_not_paired">TeleForward isn\'t paired with a chat — re-pair it in Settings</string>
+
+    <string name="tg_dismissed">Dismissed</string>
+    <string name="tg_couldnt_complete">Couldn\'t complete that: %1$s</string>
+    <string name="tg_device_timeout">the phone didn\'t respond within %1$ds</string>
+    <string name="tg_resolved_already_gone">✓ Already gone</string>
+
+    <string name="tg_outcome_notification_gone">Notification is no longer on the device</string>
+    <string name="tg_outcome_listener_unavailable">Notification access is not connected</string>
+    <string name="tg_outcome_action_unavailable">That action is no longer available</string>
+    <string name="tg_outcome_failed">Failed: %1$s</string>
+
+    <string name="tg_reply_sent">✅ Sent</string>
+    <string name="tg_reply_gone">⚠️ That notification is gone — can\'t reply to it any more</string>
+    <string name="tg_reply_listener_unavailable">⚠️ Notification access is not connected</string>
+    <string name="tg_reply_unavailable">⚠️ That chat can\'t be replied to from here</string>
+    <string name="tg_reply_failed">⚠️ Failed: %1$s</string>
+
+    <string name="tg_late_press_message">⏳ That press reached me too late for Telegram to show the result on the button.\n\nResult: %1$s\n\nWhy: the button was pressed while TeleForward wasn\'t listening. It checks Telegram for a few minutes after each forward, then a few more times over the next couple of hours — a press outside those windows waits for the next check.\nTo make presses act immediately: Settings → Remote actions → “Always listening”.</string>
+    <string name="tg_undelivered_message">⚠️ I couldn\'t show the result on the button.\n\nResult: %1$s\nReason: %2$s</string>
+    <string name="tg_reason_unknown">unknown</string>
+
+    <!-- Quoted so the trailing space survives: Android trims whitespace in unquoted values. -->
+    <string name="tg_link_prefix">"Link: "</string>
+    <string name="tg_playback_ended">⏹ Playback ended</string>
+    <string name="tg_no_recipient_paired">no recipient paired</string>
 </resources>
