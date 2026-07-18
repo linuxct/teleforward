@@ -249,14 +249,14 @@ Forwarded messages can carry **buttons underneath them** — Telegram inline but
 one message — so you can act on the notification from Telegram without touching the phone:
 
 ```
-┌────────────────────────────────────────────┐
-│ WhatsApp · Messages                        │
-│ Alice                                      │
-│ Are you free tonight?                      │
-│ 21:04                                      │
-├────────────────────────────────────────────┤
+┌──────────────────────────────────────────────┐
+│ WhatsApp · Messages                          │
+│ Alice                                        │
+│ Are you free tonight?                        │
+│ 21:04                                        │
+├──────────────────────────────────────────────┤
 │ [ 💬 Reply ] [ ✅ Mark read ] [ 🗑 Dismiss ] │
-└────────────────────────────────────────────┘
+└──────────────────────────────────────────────┘
 ```
 
 Every forward keeps **its own** buttons, indefinitely — scroll back and an older message's buttons
