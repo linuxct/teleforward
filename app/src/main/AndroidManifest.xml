@@ -21,6 +21,14 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
 
     <!--
+      Lets the app notice it has been restarted. A foreground service does not survive a reboot, so
+      without this "Always listening" could read as on while nothing had polled since the phone
+      booted — every press in that window silently reaching nobody. Used only to restart that
+      listener and to collect presses queued while the device was off.
+    -->
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+
+    <!--
       Package visibility (API 30+): allows PackageManager to enumerate other apps' launcher
       activities so AppCatalogRepository can list installed apps WITHOUT QUERY_ALL_PACKAGES.
     -->
@@ -65,14 +73,28 @@
         </service>
 
         <!--
-          Opt-in "always listening" poller for remote actions. Started only from the settings toggle
-          (Android 12+ forbids starting a foreground service from the background); START_STICKY brings
-          it back after a process kill.
+          Opt-in "always listening" poller for remote actions. Normally started from the settings
+          toggle; START_STICKY brings it back after a process kill, and RemoteActionBootReceiver
+          covers a reboot (which START_STICKY does not).
         -->
         <service
             android:name=".service.TelegramListenerService"
             android:exported="false"
             android:foregroundServiceType="dataSync" />
+
+        <!--
+          Restarts the always-on listener after a reboot or an app update, and in either case queues a
+          poll so presses made while the device was off are still collected and answered.
+        -->
+        <receiver
+            android:name=".service.RemoteActionBootReceiver"
+            android:enabled="true"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+            </intent-filter>
+        </receiver>
 
         <!--
           FileProvider for sharing the assembled diagnostics dump (app-private filesDir/diag) to the

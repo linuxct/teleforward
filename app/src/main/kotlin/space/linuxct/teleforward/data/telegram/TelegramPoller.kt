@@ -14,8 +14,9 @@ import javax.inject.Singleton
  * elapses), dispatches whatever came back, and advances the offset.
  *
  * Design notes:
- *  - `allowed_updates` must explicitly include `callback_query`; the API default (messages only)
- *    would silently drop every button press.
+ *  - `allowed_updates` must include `callback_query`, and is passed explicitly on every call. It is
+ *    sticky server-side state rather than a per-request filter, so a single narrow call anywhere in
+ *    the app tells Telegram to stop queueing button presses until something widens it again.
  *  - The offset lives under its own settings key so it never overwrites the pairing offset. Note that
  *    Telegram's update queue is still shared per bot — while polling is active it consumes updates,
  *    which is why polling is skipped entirely until a chat is paired.
@@ -27,6 +28,7 @@ class TelegramPoller @Inject constructor(
     private val api: TelegramApi,
     private val settings: SettingsRepository,
     private val dispatcher: RemoteActionDispatcher,
+    private val pinner: ChatPinner,
     private val diag: RemoteActionDiag,
 ) {
 
@@ -46,7 +48,7 @@ class TelegramPoller @Inject constructor(
             api.getUpdates(
                 offset = offset,
                 timeout = timeoutSeconds,
-                allowedUpdates = ALLOWED_UPDATES,
+                allowedUpdates = TelegramApi.ALLOWED_UPDATES,
             )
         } catch (t: Throwable) {
             // Network hiccup or a cancelled long poll: let the caller decide whether to retry.
@@ -77,19 +79,25 @@ class TelegramPoller @Inject constructor(
             // Per-update isolation: one bad update must not abort the rest of the batch.
             runCatching {
                 update.callbackQuery?.let { dispatcher.handleCallback(it) }
-                update.message?.let { dispatcher.handleMessage(it) }
+                update.message?.let { message ->
+                    // Telegram announces every pin with a service message, even in a private chat.
+                    // Ours are deleted here; anything else falls through to the reply relay.
+                    if (!pinner.consumePinNotice(message)) dispatcher.handleMessage(message)
+                }
             }
+            // Confirm each update the moment it has been handled, rather than the whole batch at the
+            // end. If the worker is stopped part-way through (WorkManager reclaiming its slot, the
+            // service dying), only the update actually in flight can be redelivered — previously the
+            // entire batch was, which meant re-firing presses that had already succeeded. Dismissing
+            // twice is harmless; toggling playback twice is not.
+            runCatching { settings.setRemoteActionsOffset(update.updateId + 1) }
         }
-        settings.setRemoteActionsOffset(updates.maxOf { it.updateId } + 1)
         return true
     }
 
     companion object {
         /** Long-poll window. Comfortably below the 60s OkHttp read timeout. */
         const val POLL_TIMEOUT_SECONDS = 25
-
-        /** Button presses arrive as `callback_query`; replies arrive as `message`. */
-        private const val ALLOWED_UPDATES = "[\"message\",\"callback_query\"]"
 
         /** Telegram's "another getUpdates is already running" status. */
         private const val HTTP_CONFLICT = 409

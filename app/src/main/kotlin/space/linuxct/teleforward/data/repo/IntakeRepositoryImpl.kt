@@ -47,6 +47,7 @@ class IntakeRepositoryImpl @Inject constructor(
             youtubeVideoId = notification.youtubeVideoId,
             notificationKey = notification.key,
             actionsJson = NotificationActions.encode(notification.actions),
+            isMedia = notification.isMedia,
             // Store the harvested links newline-joined (URLs contain no newlines); null when none.
             extractedLinks = notification.extractedLinks
                 .takeIf { it.isNotEmpty() }

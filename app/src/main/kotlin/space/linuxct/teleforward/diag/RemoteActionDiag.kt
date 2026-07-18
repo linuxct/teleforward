@@ -76,6 +76,19 @@ class RemoteActionDiag @Inject constructor(
         put("outcome", outcome)
     }
 
+    /**
+     * Whether the press was actually acknowledged to Telegram.
+     *
+     * Its own phase because "we handled the press" and "the user saw a result" are different claims,
+     * and only this one distinguishes them. A press answered too late — the signature of a press that
+     * landed while nothing was polling — shows up here as delivered=false with Telegram's own
+     * rejection text, which is otherwise invisible in a dump.
+     */
+    suspend fun answer(delivered: Boolean, error: String?) = record("answer") {
+        put("delivered", delivered)
+        putOpt("error", error)
+    }
+
     /** A typed reply routed back to a notification. [textLength] only — never the text itself. */
     suspend fun reply(
         matched: Boolean,

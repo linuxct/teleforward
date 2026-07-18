@@ -286,7 +286,9 @@ default is only used for someone who has never touched the toggle.
 A press only lands while the app is listening (see *The return path* above), and there are two modes:
 
 - **Burst (default):** after each forward it listens for a few minutes — the window in which you'd
-  realistically press a button. No permanent notification, negligible battery.
+  realistically press a button — then checks back a handful of times over the next couple of hours, so
+  a later press is still collected and answered rather than vanishing. No permanent notification,
+  negligible battery.
 - **Always listening (optional):** a foreground service holds the connection open so presses act
   instantly, at the cost of a **permanent notification**.
 
@@ -330,16 +332,25 @@ Off by default, and deliberately so: unlike a chat notification (a single event 
 a media notification re-posts for your whole listening session, so the control keeps waking the
 inbound poller as tracks change. That's a real battery cost, so it's yours to opt into.
 
-> **Prefer one message per song instead?** Leave this off and turn off **Skip ongoing** in Settings —
-> media notifications then forward as ordinary messages, one per track, buttons included. Playing the
-> same song twice forwards twice; only genuine duplicate re-posts are collapsed.
+> **Prefer a notification per song instead?** Leave this off and turn off **Skip ongoing** in
+> Settings. Media notifications then forward as ordinary messages — one per track, with cover art and
+> buttons — and Telegram pings you for each one. The chat still keeps only the **latest**: each new
+> track deletes the previous message, per player. Playing the same song twice forwards twice; only
+> genuine duplicate re-posts are collapsed.
+>
+> Either way, the message for whatever is playing is **pinned**, so you can reach it however much
+> arrives underneath. TeleForward deletes the "pinned a message" notice Telegram posts for its own
+> pins, so the chat doesn't fill with them.
 
 ### Limits worth knowing
 
 - **The notification must still be on the phone.** Once it's gone (read elsewhere, swiped, auto-cleared)
   the action can't fire and TeleForward answers "no longer available" rather than pretending.
-- In burst mode, a button pressed long after the forward may not land until the next forward starts
-  another listening window.
+- **A late press is answered late, and says so.** Telegram stops accepting an answer for a press
+  within seconds, so one made outside a listening window can never light up the button itself. The app
+  checks back a few times over the following couple of hours, performs the action then, and posts a
+  message explaining what happened and why the button appeared to hang. *Always listening* is what
+  makes presses act immediately.
 - **Reply only works where the app supports inline reply** with a modifiable action — WhatsApp and
   Telegram X do. Apps that only open a compose screen (e.g. K-9 Mail) show that action as `Reply ↗`
   instead, which opens the app on the phone.

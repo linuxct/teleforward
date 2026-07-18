@@ -235,11 +235,14 @@ class TeleNotificationListener : NotificationListenerService() {
         }
 
         // 5-7. Extract content + images and enqueue, all off the binder thread. The bitmaps in the
-        //       notification are recycled once this callback returns, so persist eagerly.
+        //       notification can be recycled or replaced out from under us — media notifications
+        //       re-post several times a second — so the read happens FIRST, before anything that
+        //       might make it wait. Resolving the app label ahead of it used to put a PackageManager
+        //       lookup between arrival and the pixels; this is the same ordering rule the now-playing
+        //       path already follows, and for the same reason.
         val imageCacheDir = cacheDir
         scope.launch {
             runCatching {
-                val label = notificationMapper.appLabel(packageName)
                 val content = notificationMapper.extractContent(notification)
                 val images = notificationMapper.extractImages(
                     sbn = notification,
@@ -247,6 +250,8 @@ class TeleNotificationListener : NotificationListenerService() {
                     includeImages = settings.includeImages,
                     includeAvatars = settings.includeAvatars,
                 )
+                // Safe to be slow now: the pixels are already on disk.
+                val label = notificationMapper.appLabel(packageName)
                 val raw = notificationMapper.buildRawNotification(
                     sbn = notification,
                     channel = channel,

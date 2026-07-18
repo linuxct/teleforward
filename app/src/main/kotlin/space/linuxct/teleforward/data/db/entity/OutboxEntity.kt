@@ -77,6 +77,11 @@ data class OutboxEntity(
      */
     val actionsJson: String? = null,
     /**
+     * True when the source was a media/transport notification; null on rows queued before this was
+     * recorded, which fall back to inspecting the live notification.
+     */
+    val isMedia: Boolean? = null,
+    /**
      * Tier-0 harvested `http`/`https` links found anywhere in the notification, stored newline-joined
      * (URLs contain no newlines); null/blank when none. Appended at send time to any that aren't
      * already inline in the body.

@@ -6,6 +6,7 @@ import androidx.room.TypeConverters
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 import space.linuxct.teleforward.data.db.dao.CallbackTokenDao
+import space.linuxct.teleforward.data.db.dao.MediaForwardDao
 import space.linuxct.teleforward.data.db.dao.NowPlayingSessionDao
 import space.linuxct.teleforward.data.db.dao.OutboxDao
 import space.linuxct.teleforward.data.db.dao.PendingLinkResolutionDao
@@ -13,6 +14,7 @@ import space.linuxct.teleforward.data.db.dao.RulesDao
 import space.linuxct.teleforward.data.db.dao.SeenChannelDao
 import space.linuxct.teleforward.data.db.dao.SeenConversationDao
 import space.linuxct.teleforward.data.db.entity.CallbackTokenEntity
+import space.linuxct.teleforward.data.db.entity.MediaForwardEntity
 import space.linuxct.teleforward.data.db.entity.NowPlayingSessionEntity
 import space.linuxct.teleforward.data.db.entity.OutboxEntity
 import space.linuxct.teleforward.data.db.entity.OutboxImageEntity
@@ -31,8 +33,9 @@ import space.linuxct.teleforward.data.db.entity.SelectionRuleEntity
         PendingLinkResolutionEntity::class,
         CallbackTokenEntity::class,
         NowPlayingSessionEntity::class,
+        MediaForwardEntity::class,
     ],
-    version = 12,
+    version = 13,
     exportSchema = true,
 )
 @TypeConverters(Converters::class)
@@ -51,6 +54,8 @@ abstract class TeleForwardDatabase : RoomDatabase() {
     abstract fun callbackTokenDao(): CallbackTokenDao
 
     abstract fun nowPlayingSessionDao(): NowPlayingSessionDao
+
+    abstract fun mediaForwardDao(): MediaForwardDao
 
     companion object {
         const val DATABASE_NAME = "teleforward.db"
@@ -258,6 +263,48 @@ abstract class TeleForwardDatabase : RoomDatabase() {
         val MIGRATION_11_12 = object : Migration(11, 12) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("ALTER TABLE `now_playing_sessions` ADD COLUMN `photoMessage` INTEGER")
+            }
+        }
+
+        /**
+         * v12 → v13: lets an ordinary media forward be cleaned up after itself.
+         *
+         *  - new `media_forwards` table remembering each media-playback message posted through the
+         *    normal forward path, so all but the newest can be deleted and the chat keeps one live
+         *    control instead of one message per track.
+         *  - `outbox` gains a nullable `isMedia` flag. Previously "is this media?" was answered by
+         *    inspecting the LIVE notification at delivery time, which silently gave the wrong answer
+         *    whenever delivery lagged behind the notification disappearing. Recording it at capture
+         *    time makes it durable.
+         *
+         * Both additive; existing rows keep `isMedia = NULL`, which reads as "unknown" and falls back
+         * to the old live check, so items queued before the upgrade behave exactly as they did.
+         */
+        val MIGRATION_12_13 = object : Migration(12, 13) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `outbox` ADD COLUMN `isMedia` INTEGER")
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `media_forwards` (" +
+                        "`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
+                        "`packageName` TEXT NOT NULL, " +
+                        "`chatId` INTEGER NOT NULL, " +
+                        "`messageId` INTEGER NOT NULL, " +
+                        "`trackKey` TEXT, " +
+                        "`photoMessage` INTEGER NOT NULL, " +
+                        "`sentAt` INTEGER NOT NULL)",
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS `index_media_forwards_packageName` " +
+                        "ON `media_forwards` (`packageName`)",
+                )
+                db.execSQL(
+                    "CREATE UNIQUE INDEX IF NOT EXISTS `index_media_forwards_chatId_messageId` " +
+                        "ON `media_forwards` (`chatId`, `messageId`)",
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS `index_media_forwards_sentAt` " +
+                        "ON `media_forwards` (`sentAt`)",
+                )
             }
         }
     }

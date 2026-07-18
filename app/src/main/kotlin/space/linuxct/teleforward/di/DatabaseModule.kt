@@ -9,6 +9,7 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import dagger.hilt.components.SingletonComponent
 import space.linuxct.teleforward.data.db.TeleForwardDatabase
 import space.linuxct.teleforward.data.db.dao.CallbackTokenDao
+import space.linuxct.teleforward.data.db.dao.MediaForwardDao
 import space.linuxct.teleforward.data.db.dao.NowPlayingSessionDao
 import space.linuxct.teleforward.data.db.dao.OutboxDao
 import space.linuxct.teleforward.data.db.dao.PendingLinkResolutionDao
@@ -43,6 +44,7 @@ object DatabaseModule {
                 TeleForwardDatabase.MIGRATION_9_10,
                 TeleForwardDatabase.MIGRATION_10_11,
                 TeleForwardDatabase.MIGRATION_11_12,
+                TeleForwardDatabase.MIGRATION_12_13,
             )
             .fallbackToDestructiveMigration(dropAllTables = true)
             .build()
@@ -72,4 +74,8 @@ object DatabaseModule {
     @Provides
     fun provideNowPlayingSessionDao(database: TeleForwardDatabase): NowPlayingSessionDao =
         database.nowPlayingSessionDao()
+
+    @Provides
+    fun provideMediaForwardDao(database: TeleForwardDatabase): MediaForwardDao =
+        database.mediaForwardDao()
 }

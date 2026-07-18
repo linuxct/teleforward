@@ -38,15 +38,24 @@ interface TelegramApi {
     ): Response<TelegramResponse<Boolean>>
 
     /**
-     * [allowedUpdates] must be widened to include `callback_query` for inline buttons to be received;
-     * the pairing flow keeps the default (messages only) so it never consumes a button press.
+     * [allowedUpdates] defaults to the WIDE list, and every caller should leave it alone.
+     *
+     * This is not a preference — Telegram **persists** `allowed_updates` between calls ("if not
+     * specified, the previous setting will be used"), so it is server-side state, not a per-request
+     * filter. A single call narrowing it to messages tells Telegram to stop queueing `callback_query`
+     * updates altogether, and every button pressed until something re-widens it is discarded before
+     * the app can ever see it — unanswerable, and invisible in any log.
+     *
+     * The pairing flow used to rely on the old messages-only default for exactly the wrong reason:
+     * it avoided *consuming* a press, at the cost of silently switching presses off server-side.
+     * Pairing filters for messages on our side instead, which costs nothing.
      */
     @GET("getUpdates")
     suspend fun getUpdates(
         @Query("offset") offset: Long?,
         @Query("timeout") timeout: Int = 0,
         @Query("limit") limit: Int = 100,
-        @Query("allowed_updates") allowedUpdates: String = "[\"message\"]",
+        @Query("allowed_updates") allowedUpdates: String = ALLOWED_UPDATES,
     ): Response<TelegramResponse<List<TgUpdate>>>
 
     @FormUrlEncoded
@@ -81,6 +90,33 @@ interface TelegramApi {
     @FormUrlEncoded
     @POST("deleteMessage")
     suspend fun deleteMessage(
+        @Field("chat_id") chatId: Long,
+        @Field("message_id") messageId: Long,
+    ): Response<TelegramResponse<Boolean>>
+
+    /**
+     * Pin a message to the top of the chat, so the currently-playing track stays reachable however
+     * many notifications arrive under it.
+     *
+     * `disable_notification` is always set: a pin is a background bookkeeping act here, triggered by
+     * every track change, and must never buzz the phone.
+     *
+     * In a private chat a bot may pin its own messages with no extra rights. In a group it needs the
+     * `can_pin_messages` admin right, so this is strictly best-effort — a paired group chat without
+     * that right simply keeps its messages unpinned.
+     */
+    @FormUrlEncoded
+    @POST("pinChatMessage")
+    suspend fun pinChatMessage(
+        @Field("chat_id") chatId: Long,
+        @Field("message_id") messageId: Long,
+        @Field("disable_notification") disableNotification: Boolean = true,
+    ): Response<TelegramResponse<Boolean>>
+
+    /** Unpin a specific message. Deleting a pinned message also unpins it, so this is for the rest. */
+    @FormUrlEncoded
+    @POST("unpinChatMessage")
+    suspend fun unpinChatMessage(
         @Field("chat_id") chatId: Long,
         @Field("message_id") messageId: Long,
     ): Response<TelegramResponse<Boolean>>
@@ -149,5 +185,12 @@ interface TelegramApi {
 
     companion object {
         const val BASE_URL = "https://api.telegram.org/"
+
+        /**
+         * The update types this app needs. Shared by every `getUpdates` caller precisely because the
+         * setting is sticky server-side: one narrow call switches inline buttons off until a wide one
+         * turns them back on.
+         */
+        const val ALLOWED_UPDATES = "[\"message\",\"callback_query\"]"
     }
 }

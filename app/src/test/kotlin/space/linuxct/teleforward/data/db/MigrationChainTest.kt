@@ -37,6 +37,7 @@ class MigrationChainTest {
         TeleForwardDatabase.MIGRATION_9_10,
         TeleForwardDatabase.MIGRATION_10_11,
         TeleForwardDatabase.MIGRATION_11_12,
+        TeleForwardDatabase.MIGRATION_12_13,
     )
 
     @Test
@@ -52,6 +53,40 @@ class MigrationChainTest {
                 next.startVersion,
             )
         }
+    }
+
+    @Test
+    fun mediaForwardsTableAndIndicesAreCreated() {
+        // Room validates a hand-written migration's DDL against its own generated schema on open, and
+        // a mismatch throws rather than falling back — so the table this creates has to be exact.
+        val db = openBlank()
+        // 12→13 also ALTERs outbox, so that table has to exist for the migration to run at all.
+        db.execSQL("CREATE TABLE IF NOT EXISTS `outbox` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL)")
+        TeleForwardDatabase.MIGRATION_12_13.migrate(db)
+
+        // The new outbox flag must be nullable so rows queued before the upgrade survive it.
+        val outbox = columnsNotNull(db, "outbox")
+        assertTrue("isMedia should exist", outbox.containsKey("isMedia"))
+        assertEquals("isMedia must be nullable", false, outbox.getValue("isMedia"))
+
+        val columns = columnsNotNull(db, "media_forwards")
+        assertEquals(
+            setOf("id", "packageName", "chatId", "messageId", "trackKey", "photoMessage", "sentAt"),
+            columns.keys,
+        )
+        // trackKey is the only nullable column; everything else is required.
+        assertEquals("trackKey must be nullable", false, columns.getValue("trackKey"))
+        assertEquals("packageName must be NOT NULL", true, columns.getValue("packageName"))
+
+        assertEquals(
+            setOf(
+                "index_media_forwards_packageName",
+                "index_media_forwards_chatId_messageId",
+                "index_media_forwards_sentAt",
+            ),
+            indexNames(db, "media_forwards"),
+        )
+        db.close()
     }
 
     @Test
@@ -157,6 +192,6 @@ class MigrationChainTest {
 
     private companion object {
         /** Keep in step with `@Database(version = …)`. */
-        const val DATABASE_VERSION = 12
+        const val DATABASE_VERSION = 13
     }
 }

@@ -56,6 +56,26 @@ data class TgMessage(
      * how a typed reply is routed back to the source app's RemoteInput action.
      */
     @SerialName("reply_to_message") val replyToMessage: TgMessage? = null,
+    /**
+     * Set on the service message Telegram posts when something is pinned ("X pinned a message").
+     *
+     * Present because pinning the current track emits one of these on every pin — including in a
+     * private chat, where `disable_notification` does not suppress it — and left alone they would
+     * accumulate one grey line per song. Recognising them is what lets the app delete its own.
+     */
+    @SerialName("pinned_message") val pinnedMessage: TgPinnedMessageRef? = null,
+)
+
+/**
+ * Just enough of a pinned message to identify it.
+ *
+ * Deliberately not modelled as a full [TgMessage]: Telegram sends an "inaccessible message" stub here
+ * when the pinned message has since been deleted, and a stricter shape risks failing to parse an
+ * entire batch of updates over a field nothing reads.
+ */
+@Serializable
+data class TgPinnedMessageRef(
+    @SerialName("message_id") val messageId: Long = 0L,
 )
 
 @Serializable

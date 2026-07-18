@@ -49,6 +49,7 @@ class TelegramListenerService : Service() {
 
     override fun onCreate() {
         super.onCreate()
+        isRunning = true
         startForegroundCompat()
         startPolling()
     }
@@ -60,6 +61,7 @@ class TelegramListenerService : Service() {
     }
 
     override fun onDestroy() {
+        isRunning = false
         scope.cancel()
         super.onDestroy()
     }
@@ -108,6 +110,19 @@ class TelegramListenerService : Service() {
     companion object {
         private const val CHANNEL_ID = "remote_actions"
         private const val NOTIFICATION_ID = 4242
+
+        /**
+         * Whether the listener is genuinely running *right now*.
+         *
+         * The burst poller stands down while this is true, to avoid two `getUpdates` consumers
+         * trading 409s. It deliberately tracks reality rather than the "Always listening" setting:
+         * the setting can read `true` while nothing is listening at all — after a reboot, or when
+         * Android 12+ refuses a background foreground-service start — and standing down on the
+         * strength of a lie would leave presses with nobody to answer them.
+         */
+        @Volatile
+        var isRunning: Boolean = false
+            private set
 
         /** Pause after a failed poll cycle so a persistent failure can't spin the CPU/radio. */
         private const val BACKOFF_MS = 15_000L

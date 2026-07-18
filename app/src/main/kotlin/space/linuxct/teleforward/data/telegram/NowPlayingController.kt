@@ -34,6 +34,7 @@ class NowPlayingController @Inject constructor(
     private val sessionDao: NowPlayingSessionDao,
     private val sender: TelegramSender,
     private val keyboards: RemoteActionKeyboards,
+    private val pinner: ChatPinner,
     private val messageBuilder: MessageBuilder,
     private val settings: SettingsRepository,
     private val workManager: WorkManager,
@@ -165,6 +166,9 @@ class NowPlayingController @Inject constructor(
                 sessionDao.delete(packageName)
                 renderedTracks.remove(packageName)
                 keyboards.clearKeyboardForMessage(chatId, session.messageId)
+                // Playback is over, so the pin bar should stop advertising it. The message itself
+                // stays (rewritten to "playback ended") — only its prominence is withdrawn.
+                pinner.unpin(chatId, session.messageId)
                 sender.editMessage(chatId, session.messageId, stoppedLabel, replyMarkup = null)
             }
         }
@@ -177,6 +181,8 @@ class NowPlayingController @Inject constructor(
      */
     private suspend fun retire(session: NowPlayingSessionEntity) {
         keyboards.clearKeyboardForMessage(session.chatId, session.messageId)
+        // Silent, so it costs nothing; done explicitly so the pin can't outlive the message it names.
+        pinner.unpin(session.chatId, session.messageId)
         sender.deleteMessage(session.chatId, session.messageId)
     }
 
@@ -211,6 +217,8 @@ class NowPlayingController @Inject constructor(
             }
         }
         renderedTracks[packageName] = trackKey
+        // Keep whatever is playing reachable above the chat, however much arrives under it.
+        pinner.pin(chatId, messageId)
         sessionDao.upsert(
             NowPlayingSessionEntity(
                 sessionKey = packageName,

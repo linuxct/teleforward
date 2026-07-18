@@ -23,6 +23,7 @@ import space.linuxct.teleforward.data.link.YouTube
 import space.linuxct.teleforward.data.link.magicLinkKind
 import space.linuxct.teleforward.data.repo.OutboxRepository
 import space.linuxct.teleforward.data.settings.SettingsRepository
+import space.linuxct.teleforward.data.telegram.MediaForwardController
 import space.linuxct.teleforward.data.telegram.MessageBuilder
 import space.linuxct.teleforward.data.telegram.RemoteActionKeyboards
 import space.linuxct.teleforward.data.telegram.SendResult
@@ -65,6 +66,7 @@ class DeliveryWorker @AssistedInject constructor(
     private val remoteActionKeyboards: RemoteActionKeyboards,
     private val remoteActionDiag: RemoteActionDiag,
     private val actionGateway: NotificationActionGateway,
+    private val mediaForwardController: MediaForwardController,
     private val workManager: WorkManager,
 ) : CoroutineWorker(appContext, params) {
 
@@ -129,6 +131,8 @@ class DeliveryWorker @AssistedInject constructor(
                         // Bind the freshly-created tokens to the message that carries them, and start
                         // listening for presses.
                         onButtonsSent(row, result)
+                        // Retire the previous track's message so the chat keeps one live control.
+                        onMediaSent(row, item, result, chatId, now)
                         // Best-effort: if the first magic-link attempt missed, queue a background
                         // retry to edit the just-sent message once the link resolves. Fully isolated
                         // from delivery (see the method's runCatching).
@@ -208,7 +212,14 @@ class DeliveryWorker @AssistedInject constructor(
         remoteActionKeyboards.purgeExpired(now)
         // A media notification can't be cleared by a listener, so offering Dismiss would be a button
         // that silently does nothing. Its own Stop/Pause controls are the real thing.
-        val ongoingMedia = row.notificationKey?.let { actionGateway.isOngoingMedia(it) } ?: false
+        //
+        // Prefers the flag recorded at capture time. Asking the LIVE notification, as this used to do
+        // exclusively, quietly returns false once the notification is gone — so a media item whose
+        // delivery lagged (offline, backoff, a long queue) would arrive with a Dismiss button that
+        // cannot work and a "Pause" label that flips underneath the user.
+        val ongoingMedia = row.isMedia
+            ?: row.notificationKey?.let { actionGateway.isOngoingMedia(it) }
+            ?: false
         return remoteActionKeyboards.createKeyboard(
             row = row,
             chatId = chatId,
@@ -230,6 +241,40 @@ class DeliveryWorker @AssistedInject constructor(
             val messageId = result.keyboardMessageId ?: return
             remoteActionKeyboards.attachToMessage(row.id, messageId)
             TelegramPollWorker.scheduleBurst(workManager)
+        }
+    }
+
+    /**
+     * A media forward supersedes the previous one for that app: record what was just posted and delete
+     * the track before it, so a listening session leaves one live control rather than a message per
+     * song. Only applies to the ordinary forward path — with "Now playing control" on, media never
+     * reaches the outbox at all, so there is nothing here to prune.
+     *
+     * Best-effort in the same way buttons are: a failure must never affect the delivery just made.
+     */
+    private suspend fun onMediaSent(
+        row: OutboxEntity,
+        item: OutboxWithImages,
+        result: SendResult.Success,
+        chatId: Long,
+        now: Long,
+    ) {
+        runCatching {
+            // `isMedia` is null on rows queued before it was recorded; those fall back to asking the
+            // live notification, which is what the whole pipeline used to do.
+            val isMedia = row.isMedia
+                ?: row.notificationKey?.let { actionGateway.isOngoingMedia(it) }
+                ?: false
+            if (!isMedia) return
+            mediaForwardController.recordAndPrune(
+                packageName = row.packageName,
+                chatId = chatId,
+                messageIds = result.messageIds,
+                pinMessageId = result.keyboardMessageId ?: result.messageIds.lastOrNull(),
+                trackKey = "${row.title.orEmpty()}${row.body.orEmpty()}",
+                photoMessage = item.images.isNotEmpty(),
+                now = now,
+            )
         }
     }
 

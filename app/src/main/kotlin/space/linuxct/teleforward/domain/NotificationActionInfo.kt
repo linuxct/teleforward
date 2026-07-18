@@ -190,11 +190,13 @@ const val PLAY_PAUSE_LABEL = "⏯ Play/Pause"
  * player reports 0). Players already disagree on the wording, and one of the captured YouTube states
  * literally reads "Play/Pause", so all three spellings are treated as the same control.
  *
- * Only English wording is recognised; a player localised into another language keeps its own label,
- * which is no worse than before.
+ * English and Spanish wording are recognised; a player localised into another language keeps its own
+ * label, which is no worse than before.
  */
 private fun isPlayPauseToggle(title: String): Boolean =
-    title.trim().lowercase().replace(" ", "") in setOf("play", "pause", "play/pause")
+    title.trim().lowercase().replace(" ", "") in setOf(
+        "play", "pause", "play/pause", "reproducir", "pausar", "continuar"
+    )
 
 
 /** Keeps the keyboard usable: media notifications alone can expose nine actions. */

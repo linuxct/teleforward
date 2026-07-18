@@ -19,6 +19,29 @@ interface OutboxDao {
     @Insert(onConflict = OnConflictStrategy.IGNORE)
     suspend fun insert(item: OutboxEntity): Long
 
+    /**
+     * Give an already-queued, not-yet-sent row the images a later duplicate arrived with.
+     *
+     * This exists for one specific shape: a media notification announces a track change immediately
+     * with no album art, then re-posts moments later once the art has loaded. Both posts describe the
+     * same track and now share a dedupeKey, so the second is dropped — but it is the one carrying the
+     * cover, and dropping it outright would mean every track arrived without artwork.
+     *
+     * Guarded so it can only ever fill a gap, never rewrite history: the row must still be PENDING
+     * (an item already being sent has had its images read) and must have none of its own.
+     *
+     * @return true when the images were attached, so the caller knows not to delete their files.
+     */
+    @Transaction
+    suspend fun attachImagesIfUnsent(dedupeKey: String, images: List<OutboxImageEntity>): Boolean {
+        if (images.isEmpty()) return false
+        val row = getByDedupeKey(dedupeKey) ?: return false
+        if (row.status != OutboxStatus.PENDING) return false
+        if (getImages(row.id).isNotEmpty()) return false
+        insertImages(images.map { it.copy(outboxId = row.id) })
+        return true
+    }
+
     @Insert(onConflict = OnConflictStrategy.IGNORE)
     suspend fun insertImages(images: List<OutboxImageEntity>): List<Long>
 

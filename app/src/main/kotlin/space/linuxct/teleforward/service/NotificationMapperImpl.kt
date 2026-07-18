@@ -267,15 +267,23 @@ class NotificationMapperImpl @Inject constructor(
         imagePaths: List<String>,
     ): RawNotification {
         // Stable idempotency key: notification key + a content fingerprint so an in-place update
-        // that changes the text/image count is treated as a new item.
+        // that changes the text (or, for non-media, the image count) is treated as a new item.
+        val playSalt = mediaPlaySalt(sbn, content)
         val fingerprint = buildString {
             append(content.title.orEmpty()).append('\u0001')
             append(content.body.orEmpty()).append('\u0001')
-            append(imagePaths.size)
+            // Deliberately NOT included for media. A player announces a track change in two steps —
+            // first with no album art, then again ~50ms later once the art has loaded (in the
+            // captured session, 187 of 329 posts carried no large icon at all). Keying on the image
+            // count made those two posts different items, so every single track arrived TWICE: once
+            // as bare text and once with the cover. For media, the count is the one thing about a
+            // track that is guaranteed to change; the second post is the same track finishing
+            // loading, and is merged into the first by OutboxRepository instead.
+            if (playSalt == null) append(imagePaths.size)
             // For media the content alone is not enough: a track played twice is byte-identical to
             // the first play and would be swallowed as a duplicate. The play salt separates the two
             // while still collapsing the many re-posts that make up a single play.
-            mediaPlaySalt(sbn, content)?.let { salt -> append('').append(salt) }
+            playSalt?.let { salt -> append('').append(salt) }
         }
         return RawNotification(
             packageName = sbn.packageName,
@@ -295,6 +303,7 @@ class NotificationMapperImpl @Inject constructor(
             youtubeVideoId = extractYoutubeVideoId(sbn),
             extractedLinks = extractLinks(sbn),
             actions = extractActions(sbn),
+            isMedia = playSalt != null,
         )
     }
 

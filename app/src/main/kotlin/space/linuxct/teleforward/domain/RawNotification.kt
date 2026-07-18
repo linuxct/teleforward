@@ -52,4 +52,9 @@ data class RawNotification(
     val youtubeVideoId: String? = null,
     val extractedLinks: List<String> = emptyList(),
     val actions: List<NotificationActionInfo> = emptyList(),
+    /**
+     * True when this was a media/transport notification. Captured here rather than re-derived at
+     * delivery time, where the live notification may already be gone and the answer silently wrong.
+     */
+    val isMedia: Boolean = false,
 )

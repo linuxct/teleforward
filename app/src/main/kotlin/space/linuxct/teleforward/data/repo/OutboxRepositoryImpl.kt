@@ -23,11 +23,27 @@ class OutboxRepositoryImpl @Inject constructor(
     override suspend fun enqueue(item: OutboxEntity, images: List<OutboxImageEntity>): Long {
         // insert IGNOREs on duplicate dedupeKey and returns -1L; propagate that as a drop.
         val id = outboxDao.insert(item)
-        if (id == -1L) return -1L
-        if (images.isNotEmpty()) {
-            outboxDao.insertImages(images.map { it.copy(outboxId = id) })
+        if (id != -1L) {
+            if (images.isNotEmpty()) {
+                outboxDao.insertImages(images.map { it.copy(outboxId = id) })
+            }
+            return id
         }
-        return id
+
+        // A duplicate. Before discarding it, check whether it is the *better* half of a pair: a media
+        // notification posts a track change with no artwork and re-posts once the cover has loaded,
+        // and it is this second post that carries the image. Merging it into the queued row is what
+        // turns "every song arrives twice, once bare and once with a cover" into one complete message.
+        val merged = runCatching { outboxDao.attachImagesIfUnsent(item.dedupeKey, images) }
+            .getOrDefault(false)
+        // Nothing references these files if the merge didn't happen, so they would sit in the cache
+        // forever — every repeat of an image-bearing notification used to leak one.
+        if (!merged) deleteFiles(images)
+        return -1L
+    }
+
+    private fun deleteFiles(images: List<OutboxImageEntity>) {
+        images.forEach { runCatching { File(it.filePath).delete() } }
     }
 
     override suspend fun getById(id: Long): OutboxWithImages? = outboxDao.getWithImages(id)
