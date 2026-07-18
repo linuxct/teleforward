@@ -30,6 +30,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -145,6 +146,11 @@ fun OnboardingRoute(onFinished: () -> Unit) {
                         onManualChange = viewModel::onManualChatIdChange,
                         onApplyManual = viewModel::applyManualChatId,
                         onSendTest = viewModel::sendTest,
+                    )
+
+                    OnboardingStep.Features -> FeaturesStep(
+                        remoteActionsEnabled = state.remoteActionsEnabled,
+                        onSetRemoteActionsEnabled = viewModel::setRemoteActionsEnabled,
                     )
 
                     OnboardingStep.NotificationsPermission -> NotificationsPermissionStep(
@@ -356,6 +362,75 @@ private fun PairRecipientStep(
         state.testError?.let { StatusMessage(it, error = true) }
         state.testSuccess?.let { StatusMessage(it) }
     }
+}
+
+/**
+ * Introduces what a forwarded message will actually do. Both features described here are ON by
+ * default, so the wizard names them rather than letting links and buttons show up unexplained — and
+ * lets action buttons be switched off right here.
+ */
+@Composable
+private fun FeaturesStep(
+    remoteActionsEnabled: Boolean,
+    onSetRemoteActionsEnabled: (Boolean) -> Unit,
+) {
+    Text("What you'll get", style = MaterialTheme.typography.headlineSmall)
+    Text(
+        text = "Two things are switched on already. You can change both later.",
+        style = MaterialTheme.typography.bodyLarge,
+    )
+
+    ElevatedCard(modifier = Modifier.fillMaxWidth()) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Text("✨ Magic links", style = MaterialTheme.typography.titleMedium)
+            Text(
+                text = "For some apps TeleForward works out the link the notification would have " +
+                    "opened and adds it to the message — the YouTube video, the Apple Music song, " +
+                    "the WhatsApp chat. It's best-effort: when it can't be sure, it adds nothing " +
+                    "rather than the wrong link. Turn it off per app under Apps.",
+                style = MaterialTheme.typography.bodyMedium,
+            )
+        }
+    }
+
+    ElevatedCard(modifier = Modifier.fillMaxWidth()) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text("🎛️ Action buttons", style = MaterialTheme.typography.titleMedium)
+                    Text(
+                        text = "Buttons under each forwarded message that act on this phone — " +
+                            "dismiss it, mark it read, or whatever that app offers. Reply by " +
+                            "replying to the message in Telegram.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        modifier = Modifier.padding(top = 4.dp),
+                    )
+                }
+                Spacer(Modifier.width(12.dp))
+                Switch(checked = remoteActionsEnabled, onCheckedChange = onSetRemoteActionsEnabled)
+            }
+            Text(
+                text = "To catch a button press, the app briefly checks Telegram for a few minutes " +
+                    "after each forward. Buttons only work while the notification is still on the " +
+                    "phone.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
+
+    Text(
+        text = "Also in Settings: \"Always listening\" for instant button presses, and a \"Now " +
+            "playing\" control that turns media notifications into one remote-control message.",
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
 }
 
 @Composable

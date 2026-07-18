@@ -26,8 +26,8 @@ android {
         applicationId = "space.linuxct.teleforward"
         minSdk = 26
         targetSdk = 37
-        versionCode = 6
-        versionName = "1.1.3"
+        versionCode = 7
+        versionName = "1.2.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {
@@ -92,6 +92,13 @@ kotlin {
     compilerOptions {
         jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17)
     }
+}
+
+// Export Room's generated schema for every version. With a long migration chain this is the only
+// reliable way to check a hand-written migration produces exactly the schema Room expects — a
+// mismatch throws on open (destructive fallback does NOT rescue it), so the JSON is committed.
+ksp {
+    arg("room.schemaLocation", "$projectDir/schemas")
 }
 
 dependencies {

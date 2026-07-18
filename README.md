@@ -13,6 +13,21 @@ to one paired chat. There is nothing to self-host — no Python service, no Dock
 endpoint. `api.telegram.org` is always reachable from the phone, and the bot token is the
 only credential.
 
+## Features
+
+| | What it does | Default |
+|---|---|---|
+| **Selective forwarding** | Choose what forwards per app, per notification channel, and per individual conversation, with INCLUDE/EXCLUDE precedence and a global pause. | — |
+| **Images & contact photos** | Forwards attached images; the sender's avatar / app logo is a separate opt-in. | images on, photos off |
+| **Magic links ✨** | Rebuilds the URL a notification is *about* — the YouTube video, the Apple Music song, the WhatsApp chat — and appends it as a `Link:` line, since Android won't let the app read the notification's own tap action. | on per supported app |
+| **Remote actions 🎛️** | Inline buttons under each forwarded message that act on the phone: dismiss, mark read, reply, or any button the source app itself offers. You can also just reply to the forwarded message. | **on** |
+| **Now playing 🎵** | One live message per media app with album art and transport buttons — a remote control for whatever is playing. | off |
+| **Always listening** | Keeps a permanent connection so button presses act instantly, instead of only during a short window after each forward. | off |
+| **Diagnostics** | On-demand forensic dump for troubleshooting, redacted of message and reply text. | off |
+
+Everything above is local to your phone and your one paired chat. There is no account, no
+telemetry, and no third party in the path other than Telegram itself.
+
 ## What it is / how it works
 
 A `NotificationListenerService` observes incoming notifications. Each one is checked against
@@ -44,6 +59,14 @@ Extract title / body / images  ──►  Outbox (Room)  ──►  WorkManager 
 Send method is chosen from the payload: text only → `sendMessage`; one image → `sendPhoto`
 (caption if the text fits, otherwise a separate message); 2–10 images → `sendMediaGroup`;
 more are batched in groups of ten.
+
+**The return path.** Remote actions make the flow two-way, and having no server means there is
+nothing for Telegram to call back into — so the app asks. It long-polls `getUpdates` to learn that
+you pressed a button or replied, then re-finds the notification on the device and fires the real
+action. By default it only listens for a few minutes after each forward (the window in which you'd
+plausibly press something); *Always listening* upgrades that to a foreground service. This is the
+one part of TeleForward that isn't purely reactive, which is why both its cost and its scheduling
+are described in *Remote actions* below.
 
 **Conversation detection** is best-effort. A notification is tied to a specific chat via its
 conversation shortcut id (`conversationShortcutInfo` / `notification.shortcutId`) or a
@@ -113,7 +136,10 @@ The app walks you through a short wizard:
    the message you just sent. Alternatively, enter a numeric `chat_id` manually (e.g. from
    [@userinfobot](https://t.me/userinfobot)). Use **Send test message** to confirm delivery
    end to end.
-5. **Allow notifications** (Android 13+) — optional `POST_NOTIFICATIONS` grant so the app can
+5. **What you'll get** — introduces the two things that are already switched on: *magic links*
+   (the real link added to forwarded messages) and *action buttons* (act on the phone from
+   Telegram). Action buttons can be switched off right here; both are changeable later.
+6. **Allow notifications** (Android 13+) — optional `POST_NOTIFICATIONS` grant so the app can
    post its own status notification; you can skip it.
 
 After finishing, open **Apps** in the main screen to choose what forwards.
@@ -145,10 +171,17 @@ After finishing, open **Apps** in the main screen to choose what forwards.
 > update untouched.
 
 Other controls live in **Settings**: replace the bot token, re-pair or change the recipient and
-send a test, global Pause, include images, Wi-Fi-only delivery, outbox expiry window, clear the
-delivery log, a listener-health indicator, and a shortcut to the battery-optimization settings.
+send a test, global Pause, include images, **include contact photos**, skip ongoing notifications,
+Wi-Fi-only delivery, outbox expiry window, clear the delivery log, a listener-health indicator, and
+a shortcut to the battery-optimization settings. A **Remote actions** section holds the action
+buttons, now playing and always-listening switches (see *Remote actions* below).
 The **Delivery log** lists recent outbox rows with status chips and a retry action for failed
 or expired items.
+
+**Include contact photos** is separate from *include images* and off by default: it forwards the
+sender's avatar or the app's logo, and Telegram lays every photo out at full bubble width — so a
+128px avatar gets upscaled until it dominates the message. Real content images (a photo someone
+actually sent) are governed by *include images* and are unaffected by this switch.
 
 ## Magic links ✨
 
@@ -169,7 +202,7 @@ link: TeleForward would rather add nothing than send you to the wrong video or c
 
 | Service | Read from the notification | Reconstructed link | How |
 |---|---|---|---|
-| **YouTube** | channel id + video title | `youtube.com/watch?v=…` | public uploads feed, with a search fallback |
+| **YouTube** | video id (live/premiere), else channel id + video title | `youtube.com/watch?v=…` | live/premieres resolve **directly**; uploads use the public feed, with a search fallback |
 | **Apple Music** | track + artist (now-playing) | `music.apple.com/…` (the song) | Apple's public iTunes Search API |
 | **WhatsApp** | the chat's phone number | `web.whatsapp.com/send/…` (opens the chat) | phone from the chat identity, or a saved contact (opt-in) |
 
@@ -183,7 +216,10 @@ Music (`com.apple.android.music`), and WhatsApp (`com.whatsapp`, `com.whatsapp.w
 - **It won't always land.** YouTube's feed and search results lag for busy channels; Apple Music
   needs an exact catalogue match; WhatsApp needs a resolvable phone number. A miss simply means
   no `Link:` line — never a broken one.
-- **YouTube self-heals.** If the first attempt (made as the message is sent) misses, the item
+- **YouTube live streams and premieres are exact.** Those notifications identify themselves by the
+  *video* id rather than the channel, so the link is built directly — instantly, with no lookup and
+  no chance of picking the wrong video. Only ordinary uploads need the feed/search route.
+- **YouTube uploads self-heal.** If the first attempt (made as the message is sent) misses, the item
   still forwards immediately, and a background worker keeps re-checking for up to about an hour,
   then **edits the already-sent Telegram message** to add the link once it resolves. (Apple Music
   and WhatsApp resolve instantly from a single lookup, so they don't need this.)
@@ -201,6 +237,120 @@ its internal id. Modern WhatsApp hides the number behind a privacy identifier (`
   automatically. With it granted, saved-contact chats become `web.whatsapp.com/send` links. The
   number **never leaves your device** except inside the link you forward to your own chat, and it
   is never written to the diagnostics logs.
+- **Group chats are never linked.** The group's id *is* in the notification, but WhatsApp Web has no
+  URL that opens a chat by id — the only group URL is an admin-generated `chat.whatsapp.com` invite,
+  which a notification never carries. Group messages therefore forward without a `Link:` line. (The
+  older group-id format begins with the group *creator's* phone number; linking that would silently
+  open a private chat with the wrong person, so TeleForward deliberately refuses it.)
+
+## Remote actions (action buttons)
+
+Forwarded messages can carry **buttons underneath them** — Telegram inline buttons, attached to that
+one message — so you can act on the notification from Telegram without touching the phone:
+
+```
+┌────────────────────────────────────────────┐
+│ WhatsApp · Messages                        │
+│ Alice                                      │
+│ Are you free tonight?                      │
+│ 21:04                                      │
+├────────────────────────────────────────────┤
+│ [ 💬 Reply ] [ ✅ Mark read ] [ 🗑 Dismiss ] │
+└────────────────────────────────────────────┘
+```
+
+Every forward keeps **its own** buttons, indefinitely — scroll back and an older message's buttons
+still target the right notification.
+
+The buttons **mirror whatever that notification actually offers**, using the app's own wording — so
+K-9 Mail gets `Mark Read` / `Delete`, a music notification gets its transport controls, WhatsApp gets
+`Reply` / `Mark as read` / `Mute`. Plus:
+
+- **🗑 Dismiss** — always available; removes the notification from the phone, exactly as if you'd
+  swiped it away. It goes through the notification listener, not the source app.
+- **💬 Reply** — offered when the app supports inline reply. Pressing it opens your keyboard focused
+  on a reply box; what you type is delivered through the app's own quick-reply, so it's sent as a
+  real message from your phone. You can also just **reply to the forwarded message** directly.
+- **`↗` suffix** — this action *opens the app on your phone* instead of acting silently in the
+  background (e.g. K-9's `Reply`, WhatsApp's `Mute`). Everything without the marker happens quietly
+  in the background, which is what makes remote control actually useful.
+
+How it works: Android blocks *reading* another app's notification tap-action, but it does **not**
+block *firing* one, and a notification listener may dismiss notifications outright. So TeleForward
+re-finds the live notification by its key and triggers the real action — no accessibility service.
+
+Action buttons are **on by default** (Settings → Remote actions) — including for existing installs
+that update into the feature. Switch them off and they stay off through every future update; the
+default is only used for someone who has never touched the toggle.
+
+A press only lands while the app is listening (see *The return path* above), and there are two modes:
+
+- **Burst (default):** after each forward it listens for a few minutes — the window in which you'd
+  realistically press a button. No permanent notification, negligible battery.
+- **Always listening (optional):** a foreground service holds the connection open so presses act
+  instantly, at the cost of a **permanent notification**.
+
+A maximum of six of an app's own actions are shown, so a media notification's nine controls don't
+become an unusable wall of buttons.
+
+### Now playing control
+
+Media notifications are normally skipped — they're ongoing, and they re-post on every track change and
+every play/pause, so forwarding them would mean a message per tick. Turn on **Now playing control**
+(Settings → Remote actions) and each media app instead keeps **one** message in the chat, carrying the
+**album art** and that app's own transport buttons:
+
+```
+┌──────────────────────────────────┐
+│ [ album art ]                    │
+│ 🎵 Apple Music                   │
+│ Some Track Title                 │
+│ Some Artist                      │
+├──────────────────────────────────┤
+│ [ Previous ] [ ⏯ Play/Pause ]    │
+│ [ Next ] [ Stop ]                │
+└──────────────────────────────────┘
+```
+
+- **A new track replaces the message.** The old one is deleted and a fresh one posted, so Telegram
+  actually notifies you that something else is playing — an edit would have been silent. Only one
+  control per app is ever live, so an old message can't sit there driving the player.
+- **It's a remote, not a status display.** Pressing Play/Pause acts on the phone but doesn't redraw
+  the message: the button reads `⏯ Play/Pause` in both states by design, so there's nothing to
+  refresh. A label showing the *current* state would be a lie the instant you used it — you press
+  "Pause", playback pauses, and the button still says "Pause" until an edit catches up.
+- **Shuffle / Repeat show no ON/OFF.** The notification simply doesn't carry that state — those
+  buttons are identical whether the mode is on or off — so TeleForward shows the player's own wording
+  rather than guessing. Pressing them still works.
+- **Playback ending** turns the message into "⏹ Playback ended" and removes its buttons.
+- These notifications are `NO_CLEAR` — Android refuses to let any listener dismiss them — so **no
+  Dismiss button is offered** here; the app's own `Stop` is the real equivalent.
+
+Off by default, and deliberately so: unlike a chat notification (a single event you may act on once),
+a media notification re-posts for your whole listening session, so the control keeps waking the
+inbound poller as tracks change. That's a real battery cost, so it's yours to opt into.
+
+> **Prefer one message per song instead?** Leave this off and turn off **Skip ongoing** in Settings —
+> media notifications then forward as ordinary messages, one per track, buttons included. Playing the
+> same song twice forwards twice; only genuine duplicate re-posts are collapsed.
+
+### Limits worth knowing
+
+- **The notification must still be on the phone.** Once it's gone (read elsewhere, swiped, auto-cleared)
+  the action can't fire and TeleForward answers "no longer available" rather than pretending.
+- In burst mode, a button pressed long after the forward may not land until the next forward starts
+  another listening window.
+- **Reply only works where the app supports inline reply** with a modifiable action — WhatsApp and
+  Telegram X do. Apps that only open a compose screen (e.g. K-9 Mail) show that action as `Reply ↗`
+  instead, which opens the app on the phone.
+- If something misbehaves, enable **Diagnostics** and dump the logs: every button attach, poll,
+  press and reply is recorded (`remoteActionTrace`) — without message text, reply text or contact
+  details.
+- Media-group forwards can't carry buttons (a Telegram limitation), so the buttons ride the
+  accompanying text message instead.
+- Doze and OEM battery managers can delay polling.
+- While remote actions are on, the poller consumes Telegram updates — if you need to **re-pair**, turn
+  it off first so the pairing capture can see your message.
 
 ## Security & privacy
 
@@ -233,6 +383,12 @@ its internal id. Modern WhatsApp hides the number behind a privacy identifier (`
 - A bot **cannot** message you until you press **Start** in it once.
 - **Images are best-effort:** they're downscaled (~2048 px, JPEG) and subject to Telegram's
   limits (photo uploads up to ~10 MB, media groups of 2–10 items).
+- **Contact photos are off by default.** Telegram lays every photo out at full bubble width and the
+  Bot API has no way to send one smaller or inline (inline images would need a public URL, i.e. a
+  server). A small avatar therefore gets upscaled into a blurry block that dwarfs the message, so
+  the notification's large icon is skipped — chat notifications forward as clean text. Real content
+  images (the photo someone sent you) are unaffected. Re-enable it with **Settings → Include contact
+  photos**.
 - **Background timing:** delivery may lag while the device is in Doze; the drain worker retries
   with exponential backoff (min 30 s) until it succeeds or the item expires.
 - **Network:** in regions that block `api.telegram.org` you'll need a system-level VPN/proxy —
@@ -241,6 +397,12 @@ its internal id. Modern WhatsApp hides the number behind a privacy identifier (`
   but disabling battery optimization for the app is recommended for reliable forwarding.
 - Delivery dedup is local only; a network drop after Telegram accepts a message but before the
   app sees the response can rarely double-post.
+- **Remote actions are best-effort** (see *Remote actions* above): they need the notification to
+  still exist on the phone, and in the default burst mode a late press may not land until the next
+  forward. Reply is only silent where the app exposes an inline-reply action that accepts injected
+  text; elsewhere it opens the app on the phone (marked `↗`).
+- **Now playing is off by default** and costs battery when on, because a media notification keeps the
+  inbound poller waking for the length of a listening session.
 - **Magic links are best-effort** (see *Magic links* above). They're reconstructed from
   notification metadata via public feeds/APIs, so they can miss — a lagging YouTube feed, no
   Apple Music catalogue match, or an unresolvable WhatsApp number — and simply add no link when
@@ -268,11 +430,14 @@ teleforward/
             │   ├── link/                # magic-link reconstruction (YouTube, Apple Music, WhatsApp)
             │   ├── settings/            # Preferences DataStore
             │   ├── secret/              # Keystore-backed SecretStore (bot token)
-            │   ├── telegram/            # API client, DTOs, message builder, sender, pairing
+            │   ├── telegram/            # API client, DTOs, message builder, sender, pairing,
+            │   │                        #   inbound poller, action keyboards/dispatcher, now playing
             │   └── repo/                # repositories
-            ├── service/                 # NotificationListenerService + mapper
-            ├── work/                    # DeliveryWorker, LinkResolveRetryWorker (magic-link edit)
-            ├── util/                    # notification-access helpers
+            ├── service/                 # NotificationListenerService + mapper, action gateway
+            │                            #   (fires/dismisses on device), always-listening service
+            ├── work/                    # DeliveryWorker, LinkResolveRetryWorker (magic-link edit),
+            │                            #   TelegramPollWorker (burst poll for button presses)
+            ├── util/                    # notification-access helpers, bounded caches
             ├── di/                      # Hilt modules
             └── ui/                      # onboarding, apps, channels, settings, log, navigation
 ```

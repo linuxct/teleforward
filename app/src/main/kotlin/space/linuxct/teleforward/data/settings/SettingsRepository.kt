@@ -51,6 +51,17 @@ interface SettingsRepository {
     /** Whether to extract and forward images. Default true. */
     val includeImages: Flow<Boolean>
 
+    /**
+     * Whether to also forward the notification's **large icon** — the contact photo / app logo.
+     *
+     * Default false, and deliberately separate from [includeImages]: Telegram renders every photo at
+     * full bubble width, so a small avatar is upscaled into a blurry block that dwarfs the message it
+     * belongs to, and the Bot API offers no way to send an image smaller or inline. Content images
+     * (BigPictureStyle — the photo someone actually sent) are governed by [includeImages] and are
+     * unaffected by this.
+     */
+    val includeAvatars: Flow<Boolean>
+
     /** Restrict delivery to unmetered (Wi-Fi) networks. Default false. */
     val wifiOnly: Flow<Boolean>
 
@@ -89,6 +100,32 @@ interface SettingsRepository {
      */
     val magicLinkDisabledPackages: Flow<Set<String>>
 
+    /**
+     * Inline action buttons on forwarded messages (dismiss / mark read / reply on the device).
+     *
+     * **Default true**, and deliberately stored as "explicit user choice only": absence means the user
+     * has never touched the toggle, so upgrading installs get buttons without being asked. Turning it
+     * off persists `false` and is honoured forever after — the default is never re-applied.
+     * Note this implies polling: the app listens for presses in a short burst after each forward.
+     */
+    val remoteActionsEnabled: Flow<Boolean>
+
+    /**
+     * Keep a persistent foreground poller so remote actions fire immediately instead of only in the
+     * burst window after a forward. Default false. Only meaningful with [remoteActionsEnabled].
+     */
+    val remoteActionsAlwaysOn: Flow<Boolean>
+
+    /** `getUpdates` offset for the remote-action poller, kept separate from the pairing offset. */
+    val remoteActionsOffset: Flow<Long>
+
+    /**
+     * Keep one "now playing" message per media app in the chat — edited in place as the track changes
+     * and carrying that app's transport buttons — instead of dropping media notifications entirely.
+     * Default false.
+     */
+    val nowPlayingEnabled: Flow<Boolean>
+
     suspend fun setChatId(chatId: Long?)
 
     suspend fun setChatDisplayName(name: String?)
@@ -120,6 +157,16 @@ interface SettingsRepository {
      * disabled set (back to the default-on state); `enabled = false` adds it.
      */
     suspend fun setMagicLinkEnabled(packageName: String, enabled: Boolean)
+
+    suspend fun setRemoteActionsEnabled(enabled: Boolean)
+
+    suspend fun setRemoteActionsAlwaysOn(enabled: Boolean)
+
+    suspend fun setRemoteActionsOffset(offset: Long)
+
+    suspend fun setNowPlayingEnabled(enabled: Boolean)
+
+    suspend fun setIncludeAvatars(enabled: Boolean)
 
     /** Synchronous-friendly one-shot read of every setting. */
     suspend fun snapshot(): SettingsSnapshot

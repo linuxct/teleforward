@@ -135,11 +135,29 @@ class LinkResolverImpl @Inject constructor(
     }
 
     /**
-     * Tier-1 reconstruction: requires a valid channel id AND a non-blank title (the video title, which
-     * is the forwarded body). Fetches the (cache-busted) uploads feed and returns the watch url only
-     * when a title matches confidently — no newest/fuzzy fallback, to avoid emitting the wrong video.
+     * Tier-1 reconstruction. A live stream / premiere already names its VIDEO id, so that short-circuits
+     * to the watch url immediately. Otherwise (an ordinary upload) this requires a valid channel id AND
+     * a non-blank title (the video title, which is the forwarded body), fetches the (cache-busted)
+     * uploads feed, and returns the watch url only when a title matches confidently — no newest/fuzzy
+     * fallback, to avoid emitting the wrong video.
      */
     private fun reconstruct(item: OutboxEntity): MagicLinkResult {
+        // Live/premiere notifications key themselves by video id: the answer is already in hand, so
+        // emit it directly — no network, no feed/search lag, and no edit-after-send retry needed.
+        item.youtubeVideoId?.takeIf { YouTube.videoIdRegex.matches(it) }?.let { videoId ->
+            val url = watchUrl(videoId)
+            return MagicLinkResult(
+                url,
+                MagicLinkTrace(
+                    outcome = MagicLinkOutcome.MATCHED,
+                    videoTitle = item.body?.trim(),
+                    videoId = videoId,
+                    url = url,
+                    source = SOURCE_SLOT_KEY,
+                ),
+            )
+        }
+
         val channelId = item.youtubeChannelId
         if (channelId == null || !YouTube.channelIdRegex.matches(channelId)) {
             return MagicLinkResult(
@@ -693,5 +711,8 @@ class LinkResolverImpl @Inject constructor(
 
         const val SOURCE_RSS = "rss"
         const val SOURCE_SEARCH = "search"
+
+        /** The video id came straight from the notification's `chime.slot_key` (live / premiere). */
+        const val SOURCE_SLOT_KEY = "slotKey"
     }
 }

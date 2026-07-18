@@ -53,6 +53,11 @@ sealed interface SendResult {
         val editableMessageId: Long? = null,
         val editableIsCaption: Boolean = false,
         val editableText: String? = null,
+        /**
+         * The message that carries the inline action buttons, when any were attached. Usually the same
+         * as [editableMessageId], but they diverge for media groups (which cannot host buttons).
+         */
+        val keyboardMessageId: Long? = null,
     ) : SendResult
 
     /** 429 — honor `parameters.retry_after`; the caller should retry after [seconds]. */

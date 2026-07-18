@@ -66,6 +66,7 @@ import android.net.Uri
 import space.linuxct.teleforward.BuildConfig
 import space.linuxct.teleforward.designsystem.AppScaffold
 import space.linuxct.teleforward.designsystem.SectionHeader
+import space.linuxct.teleforward.service.TelegramListenerService
 import space.linuxct.teleforward.util.NotificationAccess
 import kotlin.math.roundToInt
 
@@ -115,6 +116,7 @@ fun SettingsRoute(onBack: () -> Unit) {
         onClearPairing = viewModel::clearPairing,
         onSetPaused = viewModel::setPaused,
         onSetIncludeImages = viewModel::setIncludeImages,
+        onSetIncludeAvatars = viewModel::setIncludeAvatars,
         onSetWifiOnly = viewModel::setWifiOnly,
         onSetSkipOngoing = viewModel::setSkipOngoing,
         onSetExpiryHours = viewModel::setOutboxExpiryHours,
@@ -122,6 +124,21 @@ fun SettingsRoute(onBack: () -> Unit) {
         onClearAll = viewModel::clearAllLog,
         onCheckForUpdates = viewModel::onCheckForUpdates,
         onSetDiagnosticsEnabled = viewModel::setDiagnosticsEnabled,
+        // The always-on poller is a foreground service, which Android only lets us start from the
+        // foreground — so it is started/stopped here, on the user's tap, rather than by the VM.
+        onSetRemoteActionsEnabled = { enabled ->
+            viewModel.setRemoteActionsEnabled(enabled)
+            if (!enabled) TelegramListenerService.stop(context)
+        },
+        onSetRemoteActionsAlwaysOn = { enabled ->
+            viewModel.setRemoteActionsAlwaysOn(enabled)
+            if (enabled) {
+                TelegramListenerService.start(context)
+            } else {
+                TelegramListenerService.stop(context)
+            }
+        },
+        onSetNowPlayingEnabled = viewModel::setNowPlayingEnabled,
         onDumpDiagnostics = viewModel::dumpDiagnostics,
         onClearDiagnostics = viewModel::clearDiagnostics,
     )
@@ -138,6 +155,7 @@ private fun SettingsScreen(
     onClearPairing: () -> Unit,
     onSetPaused: (Boolean) -> Unit,
     onSetIncludeImages: (Boolean) -> Unit,
+    onSetIncludeAvatars: (Boolean) -> Unit,
     onSetWifiOnly: (Boolean) -> Unit,
     onSetSkipOngoing: (Boolean) -> Unit,
     onSetExpiryHours: (Int) -> Unit,
@@ -145,6 +163,9 @@ private fun SettingsScreen(
     onClearAll: () -> Unit,
     onCheckForUpdates: () -> Unit,
     onSetDiagnosticsEnabled: (Boolean) -> Unit,
+    onSetRemoteActionsEnabled: (Boolean) -> Unit,
+    onSetRemoteActionsAlwaysOn: (Boolean) -> Unit,
+    onSetNowPlayingEnabled: (Boolean) -> Unit,
     onDumpDiagnostics: () -> Unit,
     onClearDiagnostics: () -> Unit,
 ) {
@@ -174,9 +195,18 @@ private fun SettingsScreen(
                 state = state,
                 onSetPaused = onSetPaused,
                 onSetIncludeImages = onSetIncludeImages,
+                onSetIncludeAvatars = onSetIncludeAvatars,
                 onSetWifiOnly = onSetWifiOnly,
                 onSetSkipOngoing = onSetSkipOngoing,
                 onSetExpiryHours = onSetExpiryHours,
+            )
+
+            SectionHeader("Remote actions")
+            RemoteActionsCard(
+                state = state,
+                onSetRemoteActionsEnabled = onSetRemoteActionsEnabled,
+                onSetRemoteActionsAlwaysOn = onSetRemoteActionsAlwaysOn,
+                onSetNowPlayingEnabled = onSetNowPlayingEnabled,
             )
 
             SectionHeader("Maintenance")
@@ -347,6 +377,7 @@ private fun ForwardingCard(
     state: SettingsUiState,
     onSetPaused: (Boolean) -> Unit,
     onSetIncludeImages: (Boolean) -> Unit,
+    onSetIncludeAvatars: (Boolean) -> Unit,
     onSetWifiOnly: (Boolean) -> Unit,
     onSetSkipOngoing: (Boolean) -> Unit,
     onSetExpiryHours: (Int) -> Unit,
@@ -365,6 +396,17 @@ private fun ForwardingCard(
             checked = state.includeImages,
             onCheckedChange = onSetIncludeImages,
         )
+        if (state.includeImages) {
+            HorizontalDivider()
+            SettingSwitchRow(
+                title = "Include contact photos",
+                subtitle = "Also forward the sender's avatar / app logo. Telegram shows every image " +
+                    "at full width, so a small avatar gets blown up and dwarfs the message — leave " +
+                    "this off to keep chat notifications as plain text.",
+                checked = state.includeAvatars,
+                onCheckedChange = onSetIncludeAvatars,
+            )
+        }
         HorizontalDivider()
         SettingSwitchRow(
             title = "Wi-Fi only",
@@ -610,6 +652,54 @@ private fun AboutCard(
 // endregion
 
 // region Diagnostics (advanced)
+
+/**
+ * Remote actions: inline buttons under each forwarded message that act on the device. Off by default
+ * because enabling it makes the app poll Telegram for inbound presses.
+ */
+@Composable
+private fun RemoteActionsCard(
+    state: SettingsUiState,
+    onSetRemoteActionsEnabled: (Boolean) -> Unit,
+    onSetRemoteActionsAlwaysOn: (Boolean) -> Unit,
+    onSetNowPlayingEnabled: (Boolean) -> Unit,
+) {
+    SettingsCard {
+        SettingSwitchRow(
+            title = "Action buttons",
+            subtitle = "Add Dismiss / Mark read / Reply buttons under forwarded messages, and act on " +
+                "this device when you press them. Reply by replying to the forwarded message.",
+            checked = state.remoteActionsEnabled,
+            onCheckedChange = onSetRemoteActionsEnabled,
+        )
+        if (state.remoteActionsEnabled) {
+            HorizontalDivider()
+            SettingSwitchRow(
+                title = "Now playing control",
+                subtitle = "Media notifications are normally skipped. With this on, each media app " +
+                    "keeps ONE message in the chat — edited in place as the track changes — with its " +
+                    "own transport buttons, so you can control playback without a message per track.",
+                checked = state.nowPlayingEnabled,
+                onCheckedChange = onSetNowPlayingEnabled,
+            )
+            HorizontalDivider()
+            SettingSwitchRow(
+                title = "Always listening",
+                subtitle = "Keep a permanent notification so presses act immediately. Off, the app " +
+                    "only listens for a few minutes after each forward — press a button later and it " +
+                    "may not arrive until the next one.",
+                checked = state.remoteActionsAlwaysOn,
+                onCheckedChange = onSetRemoteActionsAlwaysOn,
+            )
+            Text(
+                text = "Buttons only work while the notification is still on this device — once it's " +
+                    "gone, TeleForward replies that it's no longer available.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
+}
 
 @Composable
 private fun DiagnosticsCard(

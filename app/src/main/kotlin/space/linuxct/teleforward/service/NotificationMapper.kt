@@ -2,6 +2,7 @@ package space.linuxct.teleforward.service
 
 import android.service.notification.NotificationListenerService.RankingMap
 import android.service.notification.StatusBarNotification
+import space.linuxct.teleforward.domain.NotificationActionInfo
 import space.linuxct.teleforward.data.db.entity.OutboxImageKind
 import space.linuxct.teleforward.domain.RawNotification
 import java.io.File
@@ -72,6 +73,22 @@ interface NotificationMapper {
     fun extractContent(sbn: StatusBarNotification): ExtractedContent
 
     /**
+     * The notification's action buttons as re-fireable metadata (never the `PendingIntent`s, which
+     * can't be persisted). Empty when it exposes none. Used both for the forwarded message's buttons
+     * and for the now-playing control's transport buttons.
+     */
+    fun extractActions(sbn: StatusBarNotification): List<NotificationActionInfo>
+
+    /**
+     * Persist the notification's large icon and return its file path, or null if it has none.
+     *
+     * For a media notification the large icon *is* the album art, so this is deliberately unconditional
+     * — unlike the avatar handling in [extractImages], which is opt-in because a contact photo merely
+     * dwarfs the message it belongs to. Here the artwork is the point of the control.
+     */
+    suspend fun extractLargeIcon(sbn: StatusBarNotification, cacheDir: File): String?
+
+    /**
      * Extract images (EXTRA_PICTURE + large icon), copy hardware bitmaps to ARGB_8888, downscale,
      * JPEG-compress, and persist to [cacheDir]. Returns the persisted files.
      */
@@ -79,6 +96,11 @@ interface NotificationMapper {
         sbn: StatusBarNotification,
         cacheDir: File,
         includeImages: Boolean,
+        /**
+         * Whether to also persist the large icon (contact photo / app logo). Off by default: Telegram
+         * renders any photo at full bubble width, so an avatar dominates the message it belongs to.
+         */
+        includeAvatars: Boolean = false,
     ): List<PersistedImage>
 
     /** Assemble the final [RawNotification] (including dedupeKey) from the parts above. */

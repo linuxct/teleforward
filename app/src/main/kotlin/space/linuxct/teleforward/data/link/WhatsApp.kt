@@ -16,7 +16,13 @@ package space.linuxct.teleforward.data.link
  *     contact (a `content://com.android.contacts/…` uri) via READ_CONTACTS — done elsewhere
  *     ([ContactPhoneResolver]); this object just normalizes the number that lookup returns.
  *
- * Groups (`@g.us`) are never linkable (no public URL). All helpers are pure and unit-testable.
+ * **Groups (`@g.us`) are deliberately never linkable.** The group JID *is* present in the notification
+ * (modern `120363…@g.us`, legacy `<creator-phone>-<created-at>@g.us`), but WhatsApp Web exposes no URL
+ * that opens a chat by JID — the only group URL is `chat.whatsapp.com/<invite-code>`, which is
+ * admin-generated and never present in a notification. Note the trap in the legacy form: its leading
+ * digits are the *group creator's* phone number, so feeding them to a `send?phone=` url would silently
+ * open a 1:1 chat with that person instead of the group. [phoneFromJid] therefore accepts only
+ * individual JIDs. All helpers are pure and unit-testable.
  */
 object WhatsApp {
 

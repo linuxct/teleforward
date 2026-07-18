@@ -24,10 +24,15 @@ import space.linuxct.teleforward.data.link.magicLinkKind
 import space.linuxct.teleforward.data.repo.OutboxRepository
 import space.linuxct.teleforward.data.settings.SettingsRepository
 import space.linuxct.teleforward.data.telegram.MessageBuilder
+import space.linuxct.teleforward.data.telegram.RemoteActionKeyboards
 import space.linuxct.teleforward.data.telegram.SendResult
 import space.linuxct.teleforward.data.telegram.TelegramSender
 import space.linuxct.teleforward.diag.DiagStore
 import space.linuxct.teleforward.diag.ForensicRecord
+import space.linuxct.teleforward.diag.RemoteActionDiag
+import space.linuxct.teleforward.service.NotificationActionGateway
+import space.linuxct.teleforward.domain.NotificationActions
+import space.linuxct.teleforward.domain.remoteButtons
 import java.io.File
 import kotlin.coroutines.cancellation.CancellationException
 
@@ -57,6 +62,9 @@ class DeliveryWorker @AssistedInject constructor(
     private val linkResolver: LinkResolver,
     private val diagStore: DiagStore,
     private val pendingLinkResolutionDao: PendingLinkResolutionDao,
+    private val remoteActionKeyboards: RemoteActionKeyboards,
+    private val remoteActionDiag: RemoteActionDiag,
+    private val actionGateway: NotificationActionGateway,
     private val workManager: WorkManager,
 ) : CoroutineWorker(appContext, params) {
 
@@ -112,10 +120,15 @@ class DeliveryWorker @AssistedInject constructor(
                 }
                 // Release-safe resolution trace: purely diagnostic, never affects delivery.
                 resolution?.let { logMagicLinkTrace(row, it) }
-                when (val result = telegramSender.send(item, chatId, resolution?.url)) {
+                // Best-effort inline action buttons; a failure here must never block the forward.
+                val replyMarkup = runCatching { buildActionKeyboard(row, chatId, now) }.getOrNull()
+                when (val result = telegramSender.send(item, chatId, resolution?.url, replyMarkup)) {
                     is SendResult.Success -> {
                         outboxRepository.markSent(id)
                         deleteImageFiles(item)
+                        // Bind the freshly-created tokens to the message that carries them, and start
+                        // listening for presses.
+                        onButtonsSent(row, result)
                         // Best-effort: if the first magic-link attempt missed, queue a background
                         // retry to edit the just-sent message once the link resolves. Fully isolated
                         // from delivery (see the method's runCatching).
@@ -165,6 +178,59 @@ class DeliveryWorker @AssistedInject constructor(
         }
 
         if (needsRetry) Result.retry() else Result.success()
+    }
+
+    /**
+     * Build the inline action keyboard for [row], or null when remote actions are off, the item has no
+     * captured notification identity, or it exposes nothing actionable. Creating the tokens here (not
+     * in the sender) keeps all persistence in the worker.
+     */
+    private suspend fun buildActionKeyboard(row: OutboxEntity, chatId: Long, now: Long): String? {
+        val enabled = settings.remoteActionsEnabled.first()
+        val actions = NotificationActions.decode(row.actionsJson)
+        val buttons = if (enabled && row.notificationKey != null) remoteButtons(actions) else emptyList()
+
+        // Diagnostics: explains a forward that arrived with no buttons.
+        remoteActionDiag.attach(
+            packageName = row.packageName,
+            enabled = enabled,
+            hasNotificationKey = row.notificationKey != null,
+            actionCount = actions.size,
+            buttonCount = buttons.size,
+            reason = when {
+                !enabled -> "remoteActionsDisabled"
+                row.notificationKey == null -> "noNotificationKey"
+                else -> null
+            },
+        )
+
+        if (buttons.isEmpty()) return null
+        remoteActionKeyboards.purgeExpired(now)
+        // A media notification can't be cleared by a listener, so offering Dismiss would be a button
+        // that silently does nothing. Its own Stop/Pause controls are the real thing.
+        val ongoingMedia = row.notificationKey?.let { actionGateway.isOngoingMedia(it) } ?: false
+        return remoteActionKeyboards.createKeyboard(
+            row = row,
+            chatId = chatId,
+            now = now,
+            includeDismiss = !ongoingMedia,
+            // This message is a one-shot forward and never gets re-rendered, so a "Pause" label would
+            // be wrong the instant it works. Name the toggle instead.
+            stableLabels = ongoingMedia,
+        )
+    }
+
+    /**
+     * After a successful send: bind this row's tokens to the message that hosts the buttons, then kick
+     * the burst poller so a press in the next few minutes is picked up. Entirely best-effort — buttons
+     * are a convenience and must never affect delivery state.
+     */
+    private suspend fun onButtonsSent(row: OutboxEntity, result: SendResult.Success) {
+        runCatching {
+            val messageId = result.keyboardMessageId ?: return
+            remoteActionKeyboards.attachToMessage(row.id, messageId)
+            TelegramPollWorker.scheduleBurst(workManager)
+        }
     }
 
     /**

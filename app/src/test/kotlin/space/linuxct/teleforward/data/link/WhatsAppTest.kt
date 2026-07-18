@@ -29,6 +29,17 @@ class WhatsAppTest {
     }
 
     @Test
+    fun groupJidsNeverProduceAPhone() {
+        // Regression guard. WhatsApp Web cannot open a group by JID (only invite links can), so groups
+        // must stay unlinked. The LEGACY group form is the trap: its leading digits are the group
+        // CREATOR's phone number, so a naive parse would link a 1:1 chat with the wrong person.
+        assertNull(WhatsApp.phoneFromJid("120363000000000000@g.us")) // modern group
+        assertNull(WhatsApp.phoneFromJid("12345678901-123123123@g.us")) // legacy: <creator>-<created>
+        // The same string must not sneak through the title path either.
+        assertNull(WhatsApp.phoneFromTitle("12345678901-123123123@g.us"))
+    }
+
+    @Test
     fun extractsPhoneFromInternationalTitle() {
         assertEquals("12345678901", WhatsApp.phoneFromTitle("+12 345 678 901"))
         assertEquals("98765432109", WhatsApp.phoneFromTitle("+98 765 432 109"))

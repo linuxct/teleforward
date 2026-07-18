@@ -13,6 +13,14 @@
     <uses-permission android:name="android.permission.READ_CONTACTS" />
 
     <!--
+      Optional & strictly opt-in: only used when "Always listening" is enabled for remote actions,
+      which runs a foreground service holding a long-poll to Telegram so button presses act
+      immediately. Without it the app only polls in a short burst after each forward.
+    -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+
+    <!--
       Package visibility (API 30+): allows PackageManager to enumerate other apps' launcher
       activities so AppCatalogRepository can list installed apps WITHOUT QUERY_ALL_PACKAGES.
     -->
@@ -55,6 +63,16 @@
                 <action android:name="android.service.notification.NotificationListenerService" />
             </intent-filter>
         </service>
+
+        <!--
+          Opt-in "always listening" poller for remote actions. Started only from the settings toggle
+          (Android 12+ forbids starting a foreground service from the background); START_STICKY brings
+          it back after a process kill.
+        -->
+        <service
+            android:name=".service.TelegramListenerService"
+            android:exported="false"
+            android:foregroundServiceType="dataSync" />
 
         <!--
           FileProvider for sharing the assembled diagnostics dump (app-private filesDir/diag) to the

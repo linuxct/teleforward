@@ -77,6 +77,7 @@ data class SettingsUiState(
     // Toggles
     val forwardingEnabled: Boolean = true,
     val includeImages: Boolean = true,
+    val includeAvatars: Boolean = false,
     val wifiOnly: Boolean = false,
     val skipOngoing: Boolean = true,
     val outboxExpiryHours: Int = DEFAULT_EXPIRY_HOURS,
@@ -87,6 +88,9 @@ data class SettingsUiState(
     val updateState: UpdateCheckState = UpdateCheckState.Idle,
     // Diagnostics (advanced)
     val diagnosticsEnabled: Boolean = false,
+    val remoteActionsEnabled: Boolean = false,
+    val remoteActionsAlwaysOn: Boolean = false,
+    val nowPlayingEnabled: Boolean = false,
     val diagRecordCount: Int = 0,
     val dumpState: DumpState = ActionState.Idle,
 ) {
@@ -152,10 +156,14 @@ class SettingsViewModel @Inject constructor(
         settings.botUsername.bind { s, v -> s.copy(botUsername = v) }
         settings.forwardingEnabled.bind { s, v -> s.copy(forwardingEnabled = v) }
         settings.includeImages.bind { s, v -> s.copy(includeImages = v) }
+        settings.includeAvatars.bind { s, v -> s.copy(includeAvatars = v) }
         settings.wifiOnly.bind { s, v -> s.copy(wifiOnly = v) }
         settings.skipOngoing.bind { s, v -> s.copy(skipOngoing = v) }
         settings.outboxExpiryHours.bind { s, v -> s.copy(outboxExpiryHours = v) }
         settings.diagnosticsEnabled.bind { s, v -> s.copy(diagnosticsEnabled = v) }
+        settings.remoteActionsEnabled.bind { s, v -> s.copy(remoteActionsEnabled = v) }
+        settings.remoteActionsAlwaysOn.bind { s, v -> s.copy(remoteActionsAlwaysOn = v) }
+        settings.nowPlayingEnabled.bind { s, v -> s.copy(nowPlayingEnabled = v) }
         refreshListenerHealth()
     }
 
@@ -264,9 +272,23 @@ class SettingsViewModel @Inject constructor(
 
     fun setIncludeImages(include: Boolean) = launchSetter { settings.setIncludeImages(include) }
 
+    fun setIncludeAvatars(include: Boolean) = launchSetter { settings.setIncludeAvatars(include) }
+
     fun setWifiOnly(wifiOnly: Boolean) = launchSetter { settings.setWifiOnly(wifiOnly) }
 
     fun setSkipOngoing(skip: Boolean) = launchSetter { settings.setSkipOngoing(skip) }
+
+    /** Turning remote actions off also tears down the always-on listener, which is meaningless alone. */
+    fun setRemoteActionsEnabled(enabled: Boolean) = launchSetter {
+        settings.setRemoteActionsEnabled(enabled)
+        if (!enabled) settings.setRemoteActionsAlwaysOn(false)
+    }
+
+    fun setRemoteActionsAlwaysOn(enabled: Boolean) =
+        launchSetter { settings.setRemoteActionsAlwaysOn(enabled) }
+
+    fun setNowPlayingEnabled(enabled: Boolean) =
+        launchSetter { settings.setNowPlayingEnabled(enabled) }
 
     fun setOutboxExpiryHours(hours: Int) {
         val clamped = hours.coerceIn(

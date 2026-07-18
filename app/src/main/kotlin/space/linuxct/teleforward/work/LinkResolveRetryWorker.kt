@@ -20,6 +20,7 @@ import space.linuxct.teleforward.data.db.entity.PendingLinkResolutionEntity
 import space.linuxct.teleforward.data.link.LinkResolver
 import space.linuxct.teleforward.data.link.MagicLinkResult
 import space.linuxct.teleforward.data.settings.SettingsRepository
+import space.linuxct.teleforward.data.telegram.RemoteActionKeyboards
 import space.linuxct.teleforward.data.telegram.SendResult
 import space.linuxct.teleforward.data.telegram.TelegramSender
 import space.linuxct.teleforward.diag.DiagStore
@@ -52,6 +53,7 @@ class LinkResolveRetryWorker @AssistedInject constructor(
     private val workManager: WorkManager,
     private val diagStore: DiagStore,
     private val settings: SettingsRepository,
+    private val remoteActionKeyboards: RemoteActionKeyboards,
 ) : CoroutineWorker(appContext, params) {
 
     override suspend fun doWork(): Result = withContext(Dispatchers.IO) {
@@ -104,6 +106,11 @@ class LinkResolveRetryWorker @AssistedInject constructor(
                 isCaption = row.isCaption,
                 currentText = row.sentText,
                 url = url,
+                // Telegram strips a message's inline buttons when an edit omits reply_markup, so
+                // re-send whatever keyboard this exact message already has (null when it has none).
+                replyMarkup = runCatching {
+                    remoteActionKeyboards.keyboardForMessage(row.chatId, row.messageId)
+                }.getOrNull(),
             )
             editResult = edit
             rowAction = when (edit) {

@@ -16,12 +16,14 @@ import space.linuxct.teleforward.data.repo.SeenChannelRepository
 import space.linuxct.teleforward.data.repo.SeenConversationRepository
 import space.linuxct.teleforward.data.settings.SettingsKeys
 import space.linuxct.teleforward.data.settings.SettingsRepository
+import space.linuxct.teleforward.data.telegram.NowPlayingController
 import space.linuxct.teleforward.diag.DiagStore
 import space.linuxct.teleforward.diag.NotificationForensics
 import space.linuxct.teleforward.domain.FilterDecision
 import space.linuxct.teleforward.domain.FilterEngine
 import space.linuxct.teleforward.domain.RawNotification
 import space.linuxct.teleforward.domain.SelectionRule
+import space.linuxct.teleforward.domain.isMediaNotification
 import javax.inject.Inject
 
 /**
@@ -47,9 +49,28 @@ class TeleNotificationListener : NotificationListenerService() {
     @Inject lateinit var filterEngine: FilterEngine
     @Inject lateinit var notificationForensics: NotificationForensics
     @Inject lateinit var diagStore: DiagStore
+    @Inject lateinit var actionGateway: NotificationActionGateway
+    @Inject lateinit var nowPlayingController: NowPlayingController
 
     /** Owned scope for all heavy work; cancelled in [onDestroy]. */
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
+    /**
+     * The handle [NotificationActionGateway] acts through — the only bridge from background code
+     * (workers handling Telegram button presses) back into this live service. Attached while
+     * connected; a notification is always re-resolved by key, never cached.
+     */
+    private val actionHost = object : NotificationHost {
+        override fun activeNotificationByKey(key: String): StatusBarNotification? = runCatching {
+            // The keyed overload is the cheap path; fall back to a scan if the framework returns null.
+            getActiveNotifications(arrayOf(key))?.firstOrNull()
+                ?: activeNotifications?.firstOrNull { it.key == key }
+        }.getOrNull()
+
+        override fun cancel(key: String) {
+            cancelNotification(key)
+        }
+    }
 
     /** Snapshot of the settings the binder thread needs, kept current by a collector. */
     @Volatile private var listenerSettings = ListenerSettings(
@@ -57,6 +78,7 @@ class TeleNotificationListener : NotificationListenerService() {
         forwardingEnabled = SettingsKeys.Defaults.FORWARDING_ENABLED,
         includeImages = SettingsKeys.Defaults.INCLUDE_IMAGES,
         diagnosticsEnabled = SettingsKeys.Defaults.DIAGNOSTICS_ENABLED,
+        nowPlayingEnabled = SettingsKeys.Defaults.NOW_PLAYING_ENABLED,
     )
 
     /** Current rule set, kept in sync so [FilterEngine] can be evaluated without a suspend call. */
@@ -67,14 +89,26 @@ class TeleNotificationListener : NotificationListenerService() {
         // Cache the settings + rules the binder thread reads. Collectors live for the service's
         // lifetime; started here (once) rather than in onListenerConnected (which can re-fire).
         scope.launch {
+            // combine() only has typed overloads up to five flows, so the rest are folded on after.
             combine(
                 settingsRepository.skipOngoing,
                 settingsRepository.forwardingEnabled,
                 settingsRepository.includeImages,
                 settingsRepository.diagnosticsEnabled,
-            ) { skipOngoing, forwardingEnabled, includeImages, diagnosticsEnabled ->
-                ListenerSettings(skipOngoing, forwardingEnabled, includeImages, diagnosticsEnabled)
-            }.collect { listenerSettings = it }
+                settingsRepository.nowPlayingEnabled,
+            ) { skipOngoing, forwardingEnabled, includeImages, diagnosticsEnabled, nowPlaying ->
+                ListenerSettings(
+                    skipOngoing = skipOngoing,
+                    forwardingEnabled = forwardingEnabled,
+                    includeImages = includeImages,
+                    diagnosticsEnabled = diagnosticsEnabled,
+                    nowPlayingEnabled = nowPlaying,
+                )
+            }
+                .combine(settingsRepository.includeAvatars) { base, includeAvatars ->
+                    base.copy(includeAvatars = includeAvatars)
+                }
+                .collect { listenerSettings = it }
         }
         scope.launch {
             rulesRepository.observeAllRules().collect { rules = it }
@@ -93,8 +127,16 @@ class TeleNotificationListener : NotificationListenerService() {
             }
         }
 
-        // 1. Cheap eligibility reject on the binder thread.
-        if (!notificationMapper.isEligible(notification, settings.skipOngoing)) return
+        // 1. Cheap eligibility reject on the binder thread. A media/transport notification is normally
+        //    dropped here as "ongoing"; when the now-playing control is on we let it through instead
+        //    (skipOngoing = false still rejects our own app and group summaries) and divert it below.
+        val isMedia = isMediaNotification(
+            category = notification.notification.category,
+            template = notification.notification.extras.getString(TEMPLATE_EXTRA),
+            hasMediaSession = notification.notification.extras.containsKey(MEDIA_SESSION_EXTRA),
+        )
+        val nowPlaying = isMedia && settings.nowPlayingEnabled
+        if (!notificationMapper.isEligible(notification, settings.skipOngoing && !nowPlaying)) return
 
         // 2/3. Resolve channel + conversation identity (both cheap) and record them into the
         //       seen-channels / seen-conversations catalogs (off-thread).
@@ -149,6 +191,49 @@ class TeleNotificationListener : NotificationListenerService() {
             return
         }
 
+        // 4b. Media notifications never enter the outbox: they re-post on every track change and
+        //     play/pause, so instead they drive ONE control message that is edited in place.
+        if (nowPlaying) {
+            val content = notificationMapper.extractContent(notification)
+            val actions = notificationMapper.extractActions(notification)
+            val artCacheDir = cacheDir
+            // Decide here whether artwork is even needed, from an in-memory check — the alternative
+            // (resolving it lazily inside the controller) defers extraction past the settings reads,
+            // the mutex and a DB lookup, by which point the system may have recycled or replaced the
+            // notification's bitmap. That showed up as the wrong cover art when skipping backwards,
+            // where a player posts several updates in quick succession.
+            // Asked of the controller (an instant in-memory check) rather than tracked here, so the
+            // answer reflects what the control has actually rendered. It errs towards extracting: an
+            // unknown package must never produce a message without its cover art.
+            val trackChanged = nowPlayingController.needsArtwork(
+                packageName = packageName,
+                title = content.title,
+                text = content.body,
+            )
+            scope.launch {
+                runCatching {
+                    nowPlayingController.update(
+                        packageName = packageName,
+                        appLabel = notificationMapper.appLabel(packageName),
+                        notificationKey = notification.key,
+                        title = content.title,
+                        text = content.body,
+                        actions = actions,
+                        // On a media notification the large icon IS the album art. Extracted right
+                        // away (still the first thing this coroutine does) so the bitmap is read
+                        // while it is certainly valid, but only when the track actually changed —
+                        // media notifications re-post constantly and those need no artwork.
+                        albumArtPath = if (trackChanged) {
+                            notificationMapper.extractLargeIcon(notification, artCacheDir)
+                        } else {
+                            null
+                        },
+                    )
+                }
+            }
+            return
+        }
+
         // 5-7. Extract content + images and enqueue, all off the binder thread. The bitmaps in the
         //       notification are recycled once this callback returns, so persist eagerly.
         val imageCacheDir = cacheDir
@@ -156,7 +241,12 @@ class TeleNotificationListener : NotificationListenerService() {
             runCatching {
                 val label = notificationMapper.appLabel(packageName)
                 val content = notificationMapper.extractContent(notification)
-                val images = notificationMapper.extractImages(notification, imageCacheDir, settings.includeImages)
+                val images = notificationMapper.extractImages(
+                    sbn = notification,
+                    cacheDir = imageCacheDir,
+                    includeImages = settings.includeImages,
+                    includeAvatars = settings.includeAvatars,
+                )
                 val raw = notificationMapper.buildRawNotification(
                     sbn = notification,
                     channel = channel,
@@ -170,8 +260,28 @@ class TeleNotificationListener : NotificationListenerService() {
         }
     }
 
+    /**
+     * Playback ended (or the media notification was cleared): retire that app's now-playing control so
+     * a dead message can't sit in the chat still offering transport buttons.
+     */
+    override fun onNotificationRemoved(sbn: StatusBarNotification?) {
+        super.onNotificationRemoved(sbn)
+        val notification = sbn ?: return
+        if (!listenerSettings.nowPlayingEnabled) return
+        val isMedia = isMediaNotification(
+            category = notification.notification.category,
+            template = notification.notification.extras.getString(TEMPLATE_EXTRA),
+            hasMediaSession = notification.notification.extras.containsKey(MEDIA_SESSION_EXTRA),
+        )
+        if (!isMedia) return
+        val packageName = notification.packageName
+        scope.launch { runCatching { nowPlayingController.clear(packageName) } }
+    }
+
     override fun onListenerConnected() {
         super.onListenerConnected()
+        // Expose this connected instance for remote actions (dismiss / fire action button).
+        actionGateway.attach(actionHost)
         // Seed the catalog from what's already on screen (best-effort; a listener can't enumerate
         // channels up front).
         val active = runCatching { activeNotifications }.getOrNull() ?: return
@@ -195,6 +305,8 @@ class TeleNotificationListener : NotificationListenerService() {
 
     override fun onListenerDisconnected() {
         super.onListenerDisconnected()
+        // No live connection: remote actions must report "unavailable" rather than act on a dead handle.
+        actionGateway.detach(actionHost)
         // Mitigate OEM battery-killers: ask the framework to rebind us.
         runCatching {
             NotificationListenerService.requestRebind(
@@ -204,6 +316,7 @@ class TeleNotificationListener : NotificationListenerService() {
     }
 
     override fun onDestroy() {
+        actionGateway.detach(actionHost)
         scope.cancel()
         super.onDestroy()
     }
@@ -213,5 +326,18 @@ class TeleNotificationListener : NotificationListenerService() {
         val forwardingEnabled: Boolean,
         val includeImages: Boolean,
         val diagnosticsEnabled: Boolean,
+        val nowPlayingEnabled: Boolean,
+        val includeAvatars: Boolean = SettingsKeys.Defaults.INCLUDE_AVATARS,
     )
+
+    private companion object {
+        /** `Notification.EXTRA_TEMPLATE` — identifies a MediaStyle notification. */
+        const val TEMPLATE_EXTRA = "android.template"
+
+        /**
+         * `Notification.EXTRA_MEDIA_SESSION` — present on any player's notification regardless of the
+         * app, so third-party players are picked up even with an unusual category/template.
+         */
+        const val MEDIA_SESSION_EXTRA = "android.mediaSession"
+    }
 }

@@ -37,6 +37,10 @@ interface TelegramApi {
         @Field("drop_pending_updates") dropPendingUpdates: Boolean = false,
     ): Response<TelegramResponse<Boolean>>
 
+    /**
+     * [allowedUpdates] must be widened to include `callback_query` for inline buttons to be received;
+     * the pairing flow keeps the default (messages only) so it never consumes a button press.
+     */
     @GET("getUpdates")
     suspend fun getUpdates(
         @Query("offset") offset: Long?,
@@ -52,6 +56,42 @@ interface TelegramApi {
         @Field("text") text: String,
         @Field("parse_mode") parseMode: String? = "HTML",
         @Field("disable_web_page_preview") disableWebPagePreview: Boolean = true,
+        /** JSON-serialized `InlineKeyboardMarkup` / `ForceReply`; null leaves the message bare. */
+        @Field("reply_markup") replyMarkup: String? = null,
+        @Field("reply_to_message_id") replyToMessageId: Long? = null,
+    ): Response<TelegramResponse<TgMessage>>
+
+    /**
+     * Acknowledge an inline-button press. Required: until it is called the client shows a loading
+     * spinner on the button for ~30s. [text] surfaces as a toast/alert to the user.
+     */
+    @FormUrlEncoded
+    @POST("answerCallbackQuery")
+    suspend fun answerCallbackQuery(
+        @Field("callback_query_id") callbackQueryId: String,
+        @Field("text") text: String? = null,
+        @Field("show_alert") showAlert: Boolean = false,
+    ): Response<TelegramResponse<Boolean>>
+
+    /**
+     * Delete one of the bot's own messages. Used by the now-playing control to retire the previous
+     * track's message so only the newest one keeps working buttons. Telegram allows a bot to delete
+     * its own messages for ~48h; older ones simply fail, which callers treat as best-effort.
+     */
+    @FormUrlEncoded
+    @POST("deleteMessage")
+    suspend fun deleteMessage(
+        @Field("chat_id") chatId: Long,
+        @Field("message_id") messageId: Long,
+    ): Response<TelegramResponse<Boolean>>
+
+    /** Replace (or clear, when [replyMarkup] is null) the inline buttons under an existing message. */
+    @FormUrlEncoded
+    @POST("editMessageReplyMarkup")
+    suspend fun editMessageReplyMarkup(
+        @Field("chat_id") chatId: Long,
+        @Field("message_id") messageId: Long,
+        @Field("reply_markup") replyMarkup: String? = null,
     ): Response<TelegramResponse<TgMessage>>
 
     /**
@@ -66,6 +106,8 @@ interface TelegramApi {
         @Field("text") text: String,
         @Field("parse_mode") parseMode: String? = "HTML",
         @Field("disable_web_page_preview") disableWebPagePreview: Boolean = true,
+        /** MUST be re-sent to preserve existing inline buttons — omitting it removes them. */
+        @Field("reply_markup") replyMarkup: String? = null,
     ): Response<TelegramResponse<TgMessage>>
 
     /**
@@ -79,6 +121,8 @@ interface TelegramApi {
         @Field("message_id") messageId: Long,
         @Field("caption") caption: String,
         @Field("parse_mode") parseMode: String? = "HTML",
+        /** MUST be re-sent to preserve existing inline buttons — omitting it removes them. */
+        @Field("reply_markup") replyMarkup: String? = null,
     ): Response<TelegramResponse<TgMessage>>
 
     @Multipart
@@ -88,6 +132,7 @@ interface TelegramApi {
         @Part photo: MultipartBody.Part,
         @Part("caption") caption: RequestBody? = null,
         @Part("parse_mode") parseMode: RequestBody? = null,
+        @Part("reply_markup") replyMarkup: RequestBody? = null,
     ): Response<TelegramResponse<TgMessage>>
 
     /**

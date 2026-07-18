@@ -13,6 +13,8 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.launchIn
+import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import space.linuxct.teleforward.data.settings.SettingsRepository
@@ -29,6 +31,12 @@ enum class OnboardingStep {
     NotificationAccess,
     BotToken,
     PairRecipient,
+
+    /**
+     * What forwarded messages will actually do — magic links and action buttons. Both are on by
+     * default, so the wizard introduces them rather than letting them appear unannounced.
+     */
+    Features,
     NotificationsPermission,
 }
 
@@ -66,7 +74,10 @@ data class OnboardingUiState(
     val testSuccess: String? = null,
     val testError: String? = null,
 
-    // Step 5 — POST_NOTIFICATIONS
+    // Step 5 — what's included (mirrors the live setting so it can be opted out of right here)
+    val remoteActionsEnabled: Boolean = true,
+
+    // Step 6 — POST_NOTIFICATIONS
     val postNotificationsGranted: Boolean = false,
 
     // Finishing
@@ -80,6 +91,8 @@ data class OnboardingUiState(
             OnboardingStep.NotificationAccess -> notificationAccessGranted
             OnboardingStep.BotToken -> tokenValidated
             OnboardingStep.PairRecipient -> chatId != null
+            // Informational; nothing to satisfy.
+            OnboardingStep.Features -> true
             // POST_NOTIFICATIONS is skippable — always allowed to finish.
             OnboardingStep.NotificationsPermission -> true
         }
@@ -106,6 +119,7 @@ class OnboardingViewModel @Inject constructor(
         add(OnboardingStep.NotificationAccess)
         add(OnboardingStep.BotToken)
         add(OnboardingStep.PairRecipient)
+        add(OnboardingStep.Features)
         if (requiresPostNotifications) add(OnboardingStep.NotificationsPermission)
     }
 
@@ -114,6 +128,15 @@ class OnboardingViewModel @Inject constructor(
 
     init {
         refreshSystemState()
+        // Mirror the live setting so the "what's included" step shows (and can change) the real value.
+        settings.remoteActionsEnabled
+            .onEach { enabled -> _state.update { it.copy(remoteActionsEnabled = enabled) } }
+            .launchIn(viewModelScope)
+    }
+
+    /** Opt out of action buttons straight from the wizard; persisted like the Settings toggle. */
+    fun setRemoteActionsEnabled(enabled: Boolean) {
+        viewModelScope.launch { settings.setRemoteActionsEnabled(enabled) }
     }
 
     private fun stateForStep(step: OnboardingStep, base: OnboardingUiState): OnboardingUiState {

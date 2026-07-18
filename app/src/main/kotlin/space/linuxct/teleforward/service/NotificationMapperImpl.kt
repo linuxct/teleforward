@@ -20,11 +20,13 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import space.linuxct.teleforward.data.db.entity.OutboxImageKind
 import space.linuxct.teleforward.data.link.YouTube
+import space.linuxct.teleforward.domain.NotificationActionInfo
 import space.linuxct.teleforward.domain.RawNotification
+import space.linuxct.teleforward.domain.isMediaNotification
+import space.linuxct.teleforward.util.BoundedCache
 import java.io.File
 import java.io.FileOutputStream
 import java.util.UUID
-import java.util.concurrent.ConcurrentHashMap
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -39,8 +41,24 @@ class NotificationMapperImpl @Inject constructor(
     @ApplicationContext private val context: Context,
 ) : NotificationMapper {
 
-    /** Cached PackageManager labels; the listener resolves the same package on every notification. */
-    private val labelCache = ConcurrentHashMap<String, String>()
+    /**
+     * Cached PackageManager labels; the listener resolves the same package on every notification.
+     * Hard-capped — on eviction the label is simply looked up again.
+     */
+    private val labelCache = BoundedCache<String, String>(MAX_CACHED_LABELS)
+
+    /**
+     * Last media track seen per package, with the `postTime` of the moment it started.
+     *
+     * Media notifications re-post the same track constantly — captured dumps show 20 re-posts of one
+     * track, each with a *fresh* `postTime`, ten of them inside 33 seconds. So `postTime` alone can't
+     * tell a genuine replay from a re-post. Instead the play is stamped with the postTime of the
+     * update that first showed it, which stays constant while the track does and changes the moment it
+     * doesn't. See [mediaPlaySalt].
+     */
+    private val lastMediaPlay = BoundedCache<String, MediaPlay>(MAX_TRACKED_MEDIA_APPS)
+
+    private data class MediaPlay(val trackKey: String, val salt: Long)
 
     override fun isEligible(sbn: StatusBarNotification, skipOngoing: Boolean): Boolean {
         // Never forward our own notifications (feedback loop).
@@ -203,6 +221,7 @@ class NotificationMapperImpl @Inject constructor(
         sbn: StatusBarNotification,
         cacheDir: File,
         includeImages: Boolean,
+        includeAvatars: Boolean,
     ): List<PersistedImage> {
         if (!includeImages) return emptyList()
         return withContext(Dispatchers.IO) {
@@ -214,10 +233,26 @@ class NotificationMapperImpl @Inject constructor(
                 persistBitmap(extractBigPicture(extras), cacheDir, OutboxImageKind.BIG_PICTURE)
                     ?.let { out += it }
             }
-            // Secondary image (avatar / large icon).
-            runCatching {
-                persistBitmap(iconToBitmap(notification.getLargeIcon()), cacheDir, OutboxImageKind.LARGE_ICON)
-                    ?.let { out += it }
+            // Secondary image (avatar / large icon) — opt-in. Telegram lays every photo out at full
+            // bubble width, so a small contact photo is upscaled into a blurry block that dwarfs the
+            // message, and when there's no BigPicture it becomes the message's ONLY image. There is no
+            // Bot API way to send it smaller or inline, so the only fix is not to send it.
+            //
+            // Media notifications are the exception: there the large icon is the ALBUM ART, which is
+            // wanted whether or not the now-playing control is in use, so it always rides along.
+            val isMedia = isMediaNotification(
+                category = notification.category,
+                template = extras.getString(TEMPLATE_EXTRA),
+                hasMediaSession = extras.containsKey(MEDIA_SESSION_EXTRA),
+            )
+            if (includeAvatars || isMedia) {
+                runCatching {
+                    persistBitmap(
+                        iconToBitmap(notification.getLargeIcon()),
+                        cacheDir,
+                        OutboxImageKind.LARGE_ICON,
+                    )?.let { out += it }
+                }
             }
             out
         }
@@ -237,6 +272,10 @@ class NotificationMapperImpl @Inject constructor(
             append(content.title.orEmpty()).append('\u0001')
             append(content.body.orEmpty()).append('\u0001')
             append(imagePaths.size)
+            // For media the content alone is not enough: a track played twice is byte-identical to
+            // the first play and would be swallowed as a duplicate. The play salt separates the two
+            // while still collapsing the many re-posts that make up a single play.
+            mediaPlaySalt(sbn, content)?.let { salt -> append('').append(salt) }
         }
         return RawNotification(
             packageName = sbn.packageName,
@@ -253,8 +292,91 @@ class NotificationMapperImpl @Inject constructor(
             key = sbn.key,
             dedupeKey = "${sbn.key}:${stableHash(fingerprint)}",
             youtubeChannelId = extractYoutubeChannelId(sbn),
+            youtubeVideoId = extractYoutubeVideoId(sbn),
             extractedLinks = extractLinks(sbn),
+            actions = extractActions(sbn),
         )
+    }
+
+    /**
+     * Capture the notification's action buttons as re-fireable metadata (never the `PendingIntent`
+     * itself, which cannot be persisted and dies with the process). At action time the live
+     * notification is re-resolved by key and the action located again — see [NotificationActionGateway].
+     *
+     * Records `semanticAction` (identifies Reply / Mark-as-read regardless of label or language) and
+     * whether the intent is **immutable**, because a reply can only be injected into a mutable one.
+     * Actions without a title or intent are skipped: they can't be rendered or fired.
+     * Fully try/caught — this must never break notification capture.
+     */
+    /**
+     * A value that stays constant for one play of a track and changes when a different track starts —
+     * null for anything that isn't a media notification.
+     *
+     * This is what lets a song you replay be forwarded again. Content alone can't: the second play is
+     * byte-identical to the first, so the outbox's dedupe index swallows it. `postTime` alone can't
+     * either, in the opposite direction — captured dumps show one track re-posting 20 times with 20
+     * different postTimes (ten of them within 33 seconds), so keying on it would forward a single play
+     * ten times over.
+     *
+     * So the play is stamped with the `postTime` of the update that *first* showed the track. Every
+     * re-post of that same track reuses the stamp and is correctly deduped; a different track (or the
+     * same one started again later) gets a new stamp and is forwarded. In-memory only: a process
+     * restart costs at most one duplicate message.
+     */
+    private fun mediaPlaySalt(sbn: StatusBarNotification, content: ExtractedContent): Long? {
+        val extras = sbn.notification.extras
+        val isMedia = isMediaNotification(
+            category = sbn.notification.category,
+            template = extras?.getString(TEMPLATE_EXTRA),
+            hasMediaSession = extras?.containsKey(MEDIA_SESSION_EXTRA) == true,
+        )
+        if (!isMedia) return null
+
+        val trackKey = "${content.title.orEmpty()}${content.body.orEmpty()}"
+        val existing = lastMediaPlay[sbn.packageName]
+        if (existing != null && existing.trackKey == trackKey) return existing.salt
+
+        val play = MediaPlay(trackKey = trackKey, salt = sbn.postTime)
+        lastMediaPlay[sbn.packageName] = play
+        return play.salt
+    }
+
+    override suspend fun extractLargeIcon(sbn: StatusBarNotification, cacheDir: File): String? =
+        withContext(Dispatchers.IO) {
+            runCatching {
+                persistBitmap(
+                    iconToBitmap(sbn.notification.getLargeIcon()),
+                    cacheDir,
+                    OutboxImageKind.LARGE_ICON,
+                )?.filePath
+            }.getOrNull()
+        }
+
+    override fun extractActions(sbn: StatusBarNotification): List<NotificationActionInfo> = try {
+        sbn.notification.actions.orEmpty().mapIndexedNotNull { index, action ->
+            val title = action.title?.toString()?.takeUnless { it.isBlank() }
+            val intent = action.actionIntent
+            if (title == null || intent == null) {
+                null
+            } else {
+                NotificationActionInfo(
+                    index = index,
+                    title = title,
+                    semantic = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                        action.semanticAction
+                    } else {
+                        0
+                    },
+                    remoteInput = !action.remoteInputs.isNullOrEmpty(),
+                    immutable = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && intent.isImmutable,
+                    // An activity intent opens the app on the phone; service/broadcast ones act
+                    // silently, which is what makes them genuinely useful remotely.
+                    opensApp = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && intent.isActivity,
+                )
+            }
+        }
+    } catch (t: Throwable) {
+        emptyList()
     }
 
     /**
@@ -326,6 +448,25 @@ class NotificationMapperImpl @Inject constructor(
     private fun extractYoutubeChannelId(sbn: StatusBarNotification): String? = try {
         if (sbn.packageName in YouTube.PACKAGES) {
             YouTube.extractChannelId(
+                chimeSlotKey = sbn.notification.extras.getString("chime.slot_key"),
+                tag = sbn.tag,
+            )
+        } else {
+            null
+        }
+    } catch (t: Throwable) {
+        null
+    }
+
+    /**
+     * Best-effort YouTube **video** id for a supported YouTube app. Live-stream/premiere notifications
+     * key themselves by the video id instead of the channel id, which lets the magic link be built
+     * directly with no feed/search lookup. Null for ordinary uploads (they carry a `UC…` channel id).
+     * Fully try/caught: extraction must never break notification capture.
+     */
+    private fun extractYoutubeVideoId(sbn: StatusBarNotification): String? = try {
+        if (sbn.packageName in YouTube.PACKAGES) {
+            YouTube.extractVideoId(
                 chimeSlotKey = sbn.notification.extras.getString("chime.slot_key"),
                 tag = sbn.tag,
             )
@@ -474,6 +615,14 @@ class NotificationMapperImpl @Inject constructor(
     }
 
     private companion object {
+        /** Hard caps on the in-process caches, so neither can grow without bound. */
+        const val MAX_CACHED_LABELS = 128
+        const val MAX_TRACKED_MEDIA_APPS = 16
+
+        /** `Notification.EXTRA_TEMPLATE` / `EXTRA_MEDIA_SESSION` — identify a media notification. */
+        const val TEMPLATE_EXTRA = "android.template"
+        const val MEDIA_SESSION_EXTRA = "android.mediaSession"
+
         const val MAX_EDGE = 2048
         const val JPEG_QUALITY = 80
         const val IMAGE_SUBDIR = "notif_images"

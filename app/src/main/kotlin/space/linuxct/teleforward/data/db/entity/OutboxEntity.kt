@@ -59,6 +59,24 @@ data class OutboxEntity(
     /** YouTube channel id (`UC…`) for magic-link reconstruction; null for non-YouTube items. */
     val youtubeChannelId: String? = null,
     /**
+     * YouTube video id (11 chars) for magic-link reconstruction. Live-stream/premiere notifications
+     * key themselves by the video id, so the watch url is built directly — no feed/search lookup and
+     * no edit-after-send retry. Null for ordinary uploads (which carry [youtubeChannelId] instead).
+     */
+    val youtubeVideoId: String? = null,
+    /**
+     * `StatusBarNotification.key` — the device-side identity of the notification this row came from.
+     * Lets a remote button press (from Telegram) find the still-posted notification again to dismiss
+     * it or fire one of its actions. Null for pre-feature rows.
+     */
+    val notificationKey: String? = null,
+    /**
+     * The notification's action buttons as compact JSON (see
+     * [space.linuxct.teleforward.domain.NotificationActions]); null when it exposed none. Metadata
+     * only — the `PendingIntent`s are re-resolved from the live notification at action time.
+     */
+    val actionsJson: String? = null,
+    /**
      * Tier-0 harvested `http`/`https` links found anywhere in the notification, stored newline-joined
      * (URLs contain no newlines); null/blank when none. Appended at send time to any that aren't
      * already inline in the body.

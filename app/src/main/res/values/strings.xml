@@ -2,4 +2,10 @@
 <resources>
     <string name="app_name">TeleForward</string>
     <string name="notification_listener_label">TeleForward notification access</string>
+
+    <!-- Foreground service that keeps listening for remote action button presses from Telegram. -->
+    <string name="remote_actions_channel_name">Remote actions</string>
+    <string name="remote_actions_channel_description">Shown while TeleForward is listening for action buttons you press in Telegram.</string>
+    <string name="remote_actions_ongoing_title">Listening for actions</string>
+    <string name="remote_actions_ongoing_text">Buttons you press in Telegram act on this device.</string>
 </resources>

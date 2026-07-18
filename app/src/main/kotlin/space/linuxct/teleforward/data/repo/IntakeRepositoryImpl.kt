@@ -11,6 +11,7 @@ import space.linuxct.teleforward.data.db.entity.OutboxImageEntity
 import space.linuxct.teleforward.data.db.entity.OutboxImageKind
 import space.linuxct.teleforward.data.db.entity.OutboxStatus
 import space.linuxct.teleforward.data.settings.SettingsRepository
+import space.linuxct.teleforward.domain.NotificationActions
 import space.linuxct.teleforward.domain.RawNotification
 import space.linuxct.teleforward.work.DeliveryWorker
 import java.io.File
@@ -43,6 +44,9 @@ class IntakeRepositoryImpl @Inject constructor(
             conversationId = notification.conversationId,
             senderContactUri = notification.senderContactUri,
             youtubeChannelId = notification.youtubeChannelId,
+            youtubeVideoId = notification.youtubeVideoId,
+            notificationKey = notification.key,
+            actionsJson = NotificationActions.encode(notification.actions),
             // Store the harvested links newline-joined (URLs contain no newlines); null when none.
             extractedLinks = notification.extractedLinks
                 .takeIf { it.isNotEmpty() }

@@ -28,24 +28,33 @@ class TelegramSenderImpl @Inject constructor(
     private val messageBuilder: MessageBuilder,
 ) : TelegramSender {
 
-    override suspend fun send(item: OutboxWithImages, chatId: Long, extraLink: String?): SendResult {
+    override suspend fun send(
+        item: OutboxWithImages,
+        chatId: Long,
+        extraLink: String?,
+        replyMarkup: String?,
+    ): SendResult {
         return when (val plan = messageBuilder.plan(item, extraLink)) {
             // Editable primary = the sendMessage itself; a later Link: line goes in its text.
-            is SendPlan.TextOnly -> when (val text = sendText(chatId, plan.text)) {
+            is SendPlan.TextOnly -> when (val text = sendText(chatId, plan.text, replyMarkup)) {
                 is SendResult.Success -> text.copy(
                     editableMessageId = text.messageIds.firstOrNull(),
                     editableIsCaption = false,
                     editableText = plan.text,
+                    keyboardMessageId = replyMarkup?.let { text.messageIds.firstOrNull() },
                 )
                 else -> text
             }
 
             // Editable primary = the photo; a later Link: line goes in its caption.
-            is SendPlan.SinglePhoto -> when (val photo = sendPhoto(chatId, plan.imagePath, plan.caption)) {
+            is SendPlan.SinglePhoto -> when (
+                val photo = sendPhoto(chatId, plan.imagePath, plan.caption, replyMarkup)
+            ) {
                 is SendResult.Success -> photo.copy(
                     editableMessageId = photo.messageIds.firstOrNull(),
                     editableIsCaption = true,
                     editableText = plan.caption,
+                    keyboardMessageId = replyMarkup?.let { photo.messageIds.firstOrNull() },
                 )
                 else -> photo
             }
@@ -53,7 +62,7 @@ class TelegramSenderImpl @Inject constructor(
             is SendPlan.PhotoWithSeparateText -> {
                 val ids = ArrayList<Long>()
                 // Editable primary = the separate text message (it carries the body); capture its id.
-                val editableId: Long? = when (val text = sendText(chatId, plan.text)) {
+                val editableId: Long? = when (val text = sendText(chatId, plan.text, replyMarkup)) {
                     is SendResult.Success -> {
                         ids += text.messageIds
                         text.messageIds.firstOrNull()
@@ -66,6 +75,7 @@ class TelegramSenderImpl @Inject constructor(
                         editableMessageId = editableId,
                         editableIsCaption = false,
                         editableText = plan.text,
+                        keyboardMessageId = replyMarkup?.let { editableId },
                     )
                     else -> photo
                 }
@@ -74,20 +84,29 @@ class TelegramSenderImpl @Inject constructor(
             is SendPlan.MediaGroup -> {
                 val ids = ArrayList<Long>()
                 val preceding = plan.precedingText
+                // A media group cannot carry buttons, so the keyboard rides the preceding text.
+                var keyboardId: Long? = null
                 if (!preceding.isNullOrEmpty()) {
-                    when (val text = sendText(chatId, preceding)) {
-                        is SendResult.Success -> ids += text.messageIds
+                    when (val text = sendText(chatId, preceding, replyMarkup)) {
+                        is SendResult.Success -> {
+                            ids += text.messageIds
+                            keyboardId = replyMarkup?.let { text.messageIds.firstOrNull() }
+                        }
                         else -> return text
                     }
                 }
                 // Editable primary = the first media item, which carries the caption.
                 when (val group = sendMediaGroup(chatId, plan.imagePaths, plan.caption)) {
-                    is SendResult.Success -> SendResult.Success(
-                        ids + group.messageIds,
-                        editableMessageId = group.messageIds.firstOrNull(),
-                        editableIsCaption = true,
-                        editableText = plan.caption,
-                    )
+                    is SendResult.Success -> {
+                        val hosted = hostKeyboardIfNeeded(chatId, replyMarkup, keyboardId, ids)
+                        SendResult.Success(
+                            ids + group.messageIds,
+                            editableMessageId = group.messageIds.firstOrNull(),
+                            editableIsCaption = true,
+                            editableText = plan.caption,
+                            keyboardMessageId = hosted,
+                        )
+                    }
                     else -> group
                 }
             }
@@ -95,9 +114,13 @@ class TelegramSenderImpl @Inject constructor(
             is SendPlan.MediaGroupBatched -> {
                 val ids = ArrayList<Long>()
                 val preceding = plan.precedingText
+                var keyboardId: Long? = null
                 if (!preceding.isNullOrEmpty()) {
-                    when (val text = sendText(chatId, preceding)) {
-                        is SendResult.Success -> ids += text.messageIds
+                    when (val text = sendText(chatId, preceding, replyMarkup)) {
+                        is SendResult.Success -> {
+                            ids += text.messageIds
+                            keyboardId = replyMarkup?.let { text.messageIds.firstOrNull() }
+                        }
                         else -> return text
                     }
                 }
@@ -126,13 +149,91 @@ class TelegramSenderImpl @Inject constructor(
                     editableMessageId = editableId,
                     editableIsCaption = true,
                     editableText = plan.caption,
+                    keyboardMessageId = hostKeyboardIfNeeded(chatId, replyMarkup, keyboardId, ids),
                 )
             }
         }
     }
 
+    /**
+     * Media groups can't carry inline buttons. When a keyboard was requested but nothing has hosted it
+     * yet, post a short follow-up message to hold it. Best-effort: a failure here leaves the forward
+     * intact and simply means no buttons.
+     */
+    private suspend fun hostKeyboardIfNeeded(
+        chatId: Long,
+        replyMarkup: String?,
+        existingHost: Long?,
+        ids: MutableList<Long>,
+    ): Long? {
+        if (replyMarkup == null || existingHost != null) return existingHost
+        return when (val follow = sendText(chatId, KEYBOARD_HOST_TEXT, replyMarkup)) {
+            is SendResult.Success -> {
+                ids += follow.messageIds
+                follow.messageIds.firstOrNull()
+            }
+            else -> null
+        }
+    }
+
     override suspend fun sendTestMessage(chatId: Long, text: String): SendResult =
         sendText(chatId, text)
+
+    override suspend fun sendMessage(chatId: Long, text: String, replyMarkup: String?): SendResult =
+        sendText(chatId, text, replyMarkup)
+
+    override suspend fun sendPhotoMessage(
+        chatId: Long,
+        imagePath: String,
+        caption: String,
+        replyMarkup: String?,
+    ): SendResult = sendPhoto(chatId, imagePath, caption, replyMarkup)
+
+    override suspend fun editCaption(
+        chatId: Long,
+        messageId: Long,
+        caption: String,
+        replyMarkup: String?,
+    ): SendResult = try {
+        mapEditResponse(
+            api.editMessageCaption(
+                chatId = chatId,
+                messageId = messageId,
+                caption = caption,
+                parseMode = HTML,
+                replyMarkup = replyMarkup,
+            ),
+        )
+    } catch (e: IOException) {
+        SendResult.Transient(e.message ?: "network error")
+    } catch (e: Exception) {
+        SendResult.Transient(e.message ?: "unexpected error")
+    }
+
+    override suspend fun deleteMessage(chatId: Long, messageId: Long) {
+        runCatching { api.deleteMessage(chatId = chatId, messageId = messageId) }
+    }
+
+    override suspend fun editMessage(
+        chatId: Long,
+        messageId: Long,
+        text: String,
+        replyMarkup: String?,
+    ): SendResult = try {
+        mapEditResponse(
+            api.editMessageText(
+                chatId = chatId,
+                messageId = messageId,
+                text = text,
+                parseMode = HTML,
+                replyMarkup = replyMarkup,
+            ),
+        )
+    } catch (e: IOException) {
+        SendResult.Transient(e.message ?: "network error")
+    } catch (e: Exception) {
+        SendResult.Transient(e.message ?: "unexpected error")
+    }
 
     override suspend fun editAppendLink(
         chatId: Long,
@@ -140,6 +241,7 @@ class TelegramSenderImpl @Inject constructor(
         isCaption: Boolean,
         currentText: String,
         url: String,
+        replyMarkup: String?,
     ): SendResult {
         val newText = messageBuilder.appendLink(currentText, url, isCaption)
         return try {
@@ -149,6 +251,7 @@ class TelegramSenderImpl @Inject constructor(
                     messageId = messageId,
                     caption = newText,
                     parseMode = HTML,
+                    replyMarkup = replyMarkup,
                 )
             } else {
                 api.editMessageText(
@@ -156,6 +259,7 @@ class TelegramSenderImpl @Inject constructor(
                     messageId = messageId,
                     text = newText,
                     parseMode = HTML,
+                    replyMarkup = replyMarkup,
                 )
             }
             mapEditResponse(response)
@@ -166,8 +270,19 @@ class TelegramSenderImpl @Inject constructor(
         }
     }
 
-    private suspend fun sendText(chatId: Long, text: String): SendResult = try {
-        mapResponse(api.sendMessage(chatId = chatId, text = text, parseMode = HTML)) { env ->
+    private suspend fun sendText(
+        chatId: Long,
+        text: String,
+        replyMarkup: String? = null,
+    ): SendResult = try {
+        mapResponse(
+            api.sendMessage(
+                chatId = chatId,
+                text = text,
+                parseMode = HTML,
+                replyMarkup = replyMarkup,
+            ),
+        ) { env ->
             env.result?.let { listOf(it.messageId) } ?: emptyList()
         }
     } catch (e: IOException) {
@@ -176,7 +291,12 @@ class TelegramSenderImpl @Inject constructor(
         SendResult.Transient(e.message ?: "unexpected error")
     }
 
-    private suspend fun sendPhoto(chatId: Long, imagePath: String, caption: String): SendResult {
+    private suspend fun sendPhoto(
+        chatId: Long,
+        imagePath: String,
+        caption: String,
+        replyMarkup: String? = null,
+    ): SendResult {
         val file = File(imagePath)
         if (!file.exists()) return SendResult.Terminal("image file missing: $imagePath")
         return try {
@@ -194,6 +314,7 @@ class TelegramSenderImpl @Inject constructor(
                     photo = photoPart,
                     caption = captionBody,
                     parseMode = parseModeBody,
+                    replyMarkup = replyMarkup?.toRequestBody(TEXT_PLAIN),
                 ),
             ) { env -> env.result?.let { listOf(it.messageId) } ?: emptyList() }
         } catch (e: IOException) {
@@ -323,6 +444,9 @@ class TelegramSenderImpl @Inject constructor(
     private companion object {
         const val HTML = "HTML"
         const val DEFAULT_RETRY_AFTER_SECONDS = 30L
+
+        /** Text of the follow-up message that hosts buttons for a media group (which can't carry them). */
+        const val KEYBOARD_HOST_TEXT = "Actions"
         val TEXT_PLAIN: MediaType = "text/plain".toMediaType()
         val APPLICATION_JSON: MediaType = "application/json".toMediaType()
     }

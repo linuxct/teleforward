@@ -26,6 +26,10 @@ package space.linuxct.teleforward.domain
  * @property dedupeKey local idempotency key: `key + hash(title + body + imageCount)`.
  * @property youtubeChannelId best-effort YouTube channel id (`UC…`) extracted from a supported
  *   YouTube app's notification, used later for "magic link" reconstruction; null otherwise.
+ * @property youtubeVideoId best-effort YouTube video id (11 chars) — live-stream/premiere
+ *   notifications key themselves by video id, so the watch url needs no feed lookup; null otherwise.
+ * @property actions the notification's action buttons as re-fireable metadata (Reply / Mark as read
+ *   …), used to offer remote action buttons on the forwarded message. Empty when it has none.
  * @property extractedLinks Tier-0 harvest of every real `http`/`https` link found anywhere in the
  *   notification's readable content (text lines, all MessagingStyle messages, URLSpans, …), so a
  *   link is forwarded even when it lives in a field we don't otherwise surface. Empty when none.
@@ -45,5 +49,7 @@ data class RawNotification(
     val key: String,
     val dedupeKey: String,
     val youtubeChannelId: String? = null,
+    val youtubeVideoId: String? = null,
     val extractedLinks: List<String> = emptyList(),
+    val actions: List<NotificationActionInfo> = emptyList(),
 )

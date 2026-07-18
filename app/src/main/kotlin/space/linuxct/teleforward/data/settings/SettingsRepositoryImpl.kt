@@ -40,6 +40,9 @@ class SettingsRepositoryImpl @Inject constructor(
     override val includeImages: Flow<Boolean> =
         dataStore.data.map { it[SettingsKeys.INCLUDE_IMAGES] ?: SettingsKeys.Defaults.INCLUDE_IMAGES }
 
+    override val includeAvatars: Flow<Boolean> =
+        dataStore.data.map { it[SettingsKeys.INCLUDE_AVATARS] ?: SettingsKeys.Defaults.INCLUDE_AVATARS }
+
     override val wifiOnly: Flow<Boolean> =
         dataStore.data.map { it[SettingsKeys.WIFI_ONLY] ?: SettingsKeys.Defaults.WIFI_ONLY }
 
@@ -63,6 +66,22 @@ class SettingsRepositoryImpl @Inject constructor(
 
     override val magicLinkDisabledPackages: Flow<Set<String>> =
         dataStore.data.map { it[SettingsKeys.MAGIC_LINK_DISABLED_PACKAGES] ?: emptySet() }
+
+    override val remoteActionsEnabled: Flow<Boolean> = dataStore.data.map {
+        it[SettingsKeys.REMOTE_ACTIONS_ENABLED] ?: SettingsKeys.Defaults.REMOTE_ACTIONS_ENABLED
+    }
+
+    override val remoteActionsAlwaysOn: Flow<Boolean> = dataStore.data.map {
+        it[SettingsKeys.REMOTE_ACTIONS_ALWAYS_ON] ?: SettingsKeys.Defaults.REMOTE_ACTIONS_ALWAYS_ON
+    }
+
+    override val remoteActionsOffset: Flow<Long> = dataStore.data.map {
+        it[SettingsKeys.REMOTE_ACTIONS_OFFSET] ?: SettingsKeys.Defaults.REMOTE_ACTIONS_OFFSET
+    }
+
+    override val nowPlayingEnabled: Flow<Boolean> = dataStore.data.map {
+        it[SettingsKeys.NOW_PLAYING_ENABLED] ?: SettingsKeys.Defaults.NOW_PLAYING_ENABLED
+    }
 
     override suspend fun setChatId(chatId: Long?) {
         dataStore.edit { prefs ->
@@ -144,6 +163,26 @@ class SettingsRepositoryImpl @Inject constructor(
                 prefs[SettingsKeys.MAGIC_LINK_DISABLED_PACKAGES] = updated
             }
         }
+    }
+
+    override suspend fun setRemoteActionsEnabled(enabled: Boolean) {
+        dataStore.edit { prefs -> prefs[SettingsKeys.REMOTE_ACTIONS_ENABLED] = enabled }
+    }
+
+    override suspend fun setRemoteActionsAlwaysOn(enabled: Boolean) {
+        dataStore.edit { prefs -> prefs[SettingsKeys.REMOTE_ACTIONS_ALWAYS_ON] = enabled }
+    }
+
+    override suspend fun setRemoteActionsOffset(offset: Long) {
+        dataStore.edit { prefs -> prefs[SettingsKeys.REMOTE_ACTIONS_OFFSET] = offset }
+    }
+
+    override suspend fun setNowPlayingEnabled(enabled: Boolean) {
+        dataStore.edit { prefs -> prefs[SettingsKeys.NOW_PLAYING_ENABLED] = enabled }
+    }
+
+    override suspend fun setIncludeAvatars(enabled: Boolean) {
+        dataStore.edit { prefs -> prefs[SettingsKeys.INCLUDE_AVATARS] = enabled }
     }
 
     override suspend fun snapshot(): SettingsSnapshot {

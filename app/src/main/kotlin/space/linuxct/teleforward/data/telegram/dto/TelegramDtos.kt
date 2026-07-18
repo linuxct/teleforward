@@ -51,6 +51,11 @@ data class TgMessage(
     val date: Long = 0,
     val text: String? = null,
     val caption: String? = null,
+    /**
+     * The message this one replies to. Replying to a forwarded notification (or to a reply prompt) is
+     * how a typed reply is routed back to the source app's RemoteInput action.
+     */
+    @SerialName("reply_to_message") val replyToMessage: TgMessage? = null,
 )
 
 @Serializable
@@ -58,4 +63,44 @@ data class TgUpdate(
     @SerialName("update_id") val updateId: Long,
     val message: TgMessage? = null,
     @SerialName("channel_post") val channelPost: TgMessage? = null,
+    /** Raised when the user presses an inline button under a forwarded message. */
+    @SerialName("callback_query") val callbackQuery: TgCallbackQuery? = null,
+)
+
+/** An inline-button press. [data] is the opaque token we put in the button's `callback_data`. */
+@Serializable
+data class TgCallbackQuery(
+    val id: String,
+    val from: TgUser? = null,
+    /** The message the pressed button is attached to (absent for very old messages). */
+    val message: TgMessage? = null,
+    val data: String? = null,
+)
+
+/**
+ * A single inline button. `callback_data` is capped by Telegram at **64 bytes**, which is why we send
+ * a short opaque token and keep the real target in `callback_tokens`.
+ */
+@Serializable
+data class TgInlineKeyboardButton(
+    val text: String,
+    @SerialName("callback_data") val callbackData: String? = null,
+    val url: String? = null,
+)
+
+/**
+ * Buttons rendered **underneath one specific message** (Telegram's `inline_keyboard`) — each message
+ * keeps its own set indefinitely, unlike a reply keyboard which is chat-wide.
+ */
+@Serializable
+data class TgInlineKeyboardMarkup(
+    @SerialName("inline_keyboard") val inlineKeyboard: List<List<TgInlineKeyboardButton>>,
+)
+
+/** Asks the client to pop up the reply UI, so the user can type a reply to be relayed to the device. */
+@Serializable
+data class TgForceReply(
+    @SerialName("force_reply") val forceReply: Boolean = true,
+    val selective: Boolean = true,
+    @SerialName("input_field_placeholder") val placeholder: String? = null,
 )
