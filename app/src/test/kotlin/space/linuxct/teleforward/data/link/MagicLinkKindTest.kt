@@ -56,6 +56,18 @@ class MagicLinkKindTest {
     }
 
     @Test
+    fun `only youtube is worth retrying`() {
+        // YouTube's feed/search lag behind a fresh upload, so a second attempt genuinely succeeds.
+        assertTrue(supportsLinkRetry(MagicLinkKind.YOUTUBE))
+        // For everyone else a miss is a settled answer — retrying would burn battery for nothing.
+        listOf(
+            MagicLinkKind.APPLE_MUSIC, MagicLinkKind.WHATSAPP, MagicLinkKind.DISCORD,
+            MagicLinkKind.TELEGRAM, MagicLinkKind.GITHUB, MagicLinkKind.SIGNAL, MagicLinkKind.BLUESKY,
+        ).forEach { assertFalse("$it must not be retried", supportsLinkRetry(it)) }
+        assertFalse(supportsLinkRetry(null))
+    }
+
+    @Test
     fun `only the phone-number services need contacts resolution`() {
         // These two hide the peer's number behind an internal id, so the Contacts affordance must show.
         assertTrue(usesContactsResolution(MagicLinkKind.WHATSAPP))

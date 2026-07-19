@@ -72,3 +72,20 @@ fun magicLinkKind(packageName: String): MagicLinkKind? = when (packageName) {
  */
 fun usesContactsResolution(kind: MagicLinkKind?): Boolean =
     kind == MagicLinkKind.WHATSAPP || kind == MagicLinkKind.SIGNAL
+
+/**
+ * Can a first attempt that found nothing be worth **retrying later**, editing the link into the message
+ * that was already sent?
+ *
+ * Only YouTube: its uploads feed and search results lag behind a just-published video by minutes, so the
+ * same query genuinely succeeds on a second attempt. Every other service either resolves from an id the
+ * notification already carries (Discord, Telegram, GitHub, Signal, Bluesky, WhatsApp) or from a single
+ * catalogue lookup (Apple Music) — for those a miss is a settled answer, and retrying would only burn
+ * battery to reach the same conclusion.
+ *
+ * Declared here beside [magicLinkKind] so the retry policy is one obvious switch rather than a package
+ * check buried in the delivery worker. Note the retry *storage* is still YouTube-shaped
+ * (`PendingLinkResolutionEntity` persists a channel id + video title): that is deliberate, since the
+ * right generic shape only becomes knowable once a second service actually needs it.
+ */
+fun supportsLinkRetry(kind: MagicLinkKind?): Boolean = kind == MagicLinkKind.YOUTUBE
