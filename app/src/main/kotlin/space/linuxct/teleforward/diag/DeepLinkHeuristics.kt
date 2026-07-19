@@ -1,5 +1,7 @@
 package space.linuxct.teleforward.diag
 
+import space.linuxct.teleforward.data.link.WhatsApp
+
 /**
  * Normalization result for a single candidate URI/string (§12 of the plan).
  *
@@ -62,9 +64,17 @@ object DeepLinkHeuristics {
             return NormalizedLink(raw, youTubeWatchUrl(id), "youtube", "com.google.android.youtube", "high")
         }
 
-        // 2. WhatsApp.
+        // 2. WhatsApp. Built by the PRODUCTION helper on purpose: diagnostics previously emitted
+        //    `wa.me/<phone>` while delivery emitted `web.whatsapp.com/send/…`, so a dump suggested a
+        //    different link than the app would actually forward. One builder, no drift.
         WA_JID.find(s)?.let { m ->
-            return NormalizedLink(raw, "https://wa.me/${m.groupValues[1]}", "whatsapp", "com.whatsapp", "medium")
+            return NormalizedLink(
+                raw,
+                WhatsApp.chatUrl(m.groupValues[1]),
+                "whatsapp",
+                "com.whatsapp",
+                "medium",
+            )
         }
         if (WA_GROUP.containsMatchIn(s)) {
             return NormalizedLink(raw, null, "whatsapp-group", "com.whatsapp", "none")

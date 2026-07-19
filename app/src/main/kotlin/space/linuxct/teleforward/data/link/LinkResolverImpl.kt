@@ -99,6 +99,7 @@ class LinkResolverImpl @Inject constructor(
                 MagicLinkKind.DISCORD -> reconstructDiscord(item)
                 MagicLinkKind.TELEGRAM -> reconstructTelegram(item)
                 MagicLinkKind.GITHUB -> reconstructGitHub(item)
+                MagicLinkKind.SIGNAL -> reconstructSignal(item)
             }
         }
     } catch (t: Throwable) {
@@ -318,6 +319,46 @@ class LinkResolverImpl @Inject constructor(
                     outcome = MagicLinkOutcome.NO_MATCH,
                     service = WhatsApp.SERVICE,
                     error = whatsAppMissReason(item),
+                ),
+            )
+        }
+    }
+
+    /**
+     * Signal reconstruction → a `signal.me/#p/+<e164>` url.
+     *
+     * Signal exposes no recoverable id of its own — its shortcut/locus/Person.key are all a device-local
+     * `RecipientId` row integer — so the ONLY path is the sender's identity: an unsaved contact's
+     * phone-shaped title (permission-free), else the saved contact behind [OutboxEntity.senderContactUri]
+     * via the opt-in READ_CONTACTS resolver. No network, and the trace omits the number/url (PII).
+     */
+    private fun reconstructSignal(item: OutboxEntity): MagicLinkResult {
+        val titlePhone = WhatsApp.phoneFromTitle(item.title)
+        val (phone, source) = when {
+            titlePhone != null -> titlePhone to Signal.SOURCE_TITLE
+            else -> {
+                val uri = item.senderContactUri
+                val contactPhone = if (uri != null) contactPhoneResolver.resolve(uri) else null
+                if (contactPhone != null) contactPhone to Signal.SOURCE_CONTACTS else null to null
+            }
+        }
+        return if (phone != null) {
+            MagicLinkResult(
+                Signal.chatUrl(phone),
+                MagicLinkTrace(
+                    outcome = MagicLinkOutcome.MATCHED,
+                    service = Signal.SERVICE,
+                    source = source,
+                ),
+            )
+        } else {
+            MagicLinkResult(
+                null,
+                MagicLinkTrace(
+                    outcome = MagicLinkOutcome.NO_MATCH,
+                    service = Signal.SERVICE,
+                    error = "no phone (contactUri=${item.senderContactUri != null}); " +
+                        "signal ids are device-local RecipientIds and carry no number",
                 ),
             )
         }

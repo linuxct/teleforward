@@ -31,6 +31,13 @@ enum class MagicLinkKind {
      * to `/pull/<n>` when the number is a pull request.
      */
     GITHUB,
+
+    /**
+     * Signal chat notifications → a `signal.me/#p/+<e164>` url. Signal's own ids are device-local
+     * integers, so the only recoverable identity is the sender's saved contact (opt-in READ_CONTACTS) —
+     * the same fallback WhatsApp uses for `@lid` chats.
+     */
+    SIGNAL,
 }
 
 /**
@@ -45,5 +52,16 @@ fun magicLinkKind(packageName: String): MagicLinkKind? = when (packageName) {
     in Discord.PACKAGES -> MagicLinkKind.DISCORD
     in Telegram.PACKAGES -> MagicLinkKind.TELEGRAM
     in GitHub.PACKAGES -> MagicLinkKind.GITHUB
+    in Signal.PACKAGES -> MagicLinkKind.SIGNAL
     else -> null
 }
+
+/**
+ * Does this service's reconstruction depend on the opt-in READ_CONTACTS resolver?
+ *
+ * WhatsApp (`@lid` chats) and Signal (whose own ids are device-local integers) both hide the peer's
+ * phone number, so their only recovery is the sender's saved contact. Kept here beside [magicLinkKind]
+ * so the settings UI that offers the Contacts affordance can't drift from the resolvers that need it.
+ */
+fun usesContactsResolution(kind: MagicLinkKind?): Boolean =
+    kind == MagicLinkKind.WHATSAPP || kind == MagicLinkKind.SIGNAL

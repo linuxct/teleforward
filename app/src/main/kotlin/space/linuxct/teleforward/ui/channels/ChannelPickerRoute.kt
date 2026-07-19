@@ -52,8 +52,8 @@ import androidx.core.content.ContextCompat
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import space.linuxct.teleforward.R
-import space.linuxct.teleforward.data.link.MagicLinkKind
 import space.linuxct.teleforward.data.link.magicLinkKind
+import space.linuxct.teleforward.data.link.usesContactsResolution
 import space.linuxct.teleforward.designsystem.AppScaffold
 import space.linuxct.teleforward.designsystem.SectionHeader
 
@@ -113,10 +113,11 @@ private fun ChannelPickerScreen(
                     )
                 }
             }
-            // WhatsApp-only: the opt-in Contacts affordance that upgrades saved-contact (`@lid`) chats
-            // — which hide the phone number — into WhatsApp Web links. Shown only while magic link is on.
-            if (state.magicLinkEnabled && magicLinkKind(state.packageName) == MagicLinkKind.WHATSAPP) {
-                item { WhatsAppContactsCard() }
+            // The opt-in Contacts affordance, for the services whose peer identity hides the phone
+            // number (WhatsApp `@lid` chats, Signal's device-local RecipientIds) and can only be
+            // resolved through a saved contact. Shown only while magic link is on.
+            if (state.magicLinkEnabled && usesContactsResolution(magicLinkKind(state.packageName))) {
+                item { ContactsCard() }
             }
             item { PrecedenceExplainer() }
             item { SectionHeader(stringResource(R.string.channels_section_channels)) }
@@ -205,7 +206,7 @@ private fun MagicLinkCard(
 }
 
 @Composable
-private fun WhatsAppContactsCard() {
+private fun ContactsCard() {
     val context = LocalContext.current
     var granted by remember {
         mutableStateOf(

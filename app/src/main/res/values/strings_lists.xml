@@ -36,7 +36,7 @@
     <string name="channels_magic_link_body">Best-effort: reconstructs the link this notification points to from the details it exposes and appends it to the forwarded message. Heuristic — it won\'t always find a match.</string>
 
     <string name="channels_contacts_title">Resolve saved contacts</string>
-    <string name="channels_contacts_body">WhatsApp hides phone numbers behind an internal ID, so chats with saved contacts can\'t be linked without Contacts access. Grant it to turn those into links — the number stays on your device except inside the link you forward.</string>
+    <string name="channels_contacts_body">This app hides phone numbers behind an internal ID, so chats with saved contacts can\'t be linked without Contacts access. Grant it to turn those into links — the number stays on your device except inside the link you forward.</string>
     <string name="channels_contacts_granted">Granted</string>
     <string name="channels_contacts_grant">Grant</string>
 
