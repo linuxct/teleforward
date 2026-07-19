@@ -7,7 +7,7 @@ import org.json.JSONObject
  * A compact, scannable "does this app leak a usable id?" summary for a diagnostics capture SESSION.
  *
  * The full [NotificationForensics] record is exhaustive but noisy — to decide whether a not-yet-supported
- * app (GitHub, Slack, Discord, Telegram, …) can get a magic link, you only need the handful of fields a
+ * app (Slack, X, Instagram, Reddit, …) can get a magic link, you only need the handful of fields a
  * reconstruction would key off: the `tag`, `shortcutId`, `locusId`, `group`, whether it's a conversation,
  * and which id-bearing extras are present. This pulls exactly those into one object, plus a set of pure
  * heuristic **signals** (a Discord-shaped snowflake in the shortcut, a WhatsApp phone-JID in the tag, …),

@@ -22,8 +22,6 @@ import java.net.URLEncoder
  */
 object SongLink {
 
-    const val SERVICE = "songLink"
-
     private const val BASE = "https://song.link/"
 
     /**

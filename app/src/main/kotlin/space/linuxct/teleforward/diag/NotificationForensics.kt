@@ -16,6 +16,7 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import org.json.JSONArray
 import org.json.JSONObject
 import space.linuxct.teleforward.data.link.Bluesky
+import space.linuxct.teleforward.data.link.Telegram
 import space.linuxct.teleforward.data.link.magicLinkKind
 import space.linuxct.teleforward.service.resolveUserSerial
 import javax.inject.Inject
@@ -142,8 +143,11 @@ class NotificationForensics @Inject constructor(
             isGroupConversation = style?.isGroupConversation,
             conversationTitle = style?.conversationTitle?.toString(),
             extrasKeys = runCatching { n.extras.keySet() }.getOrNull() ?: emptySet(),
+            // Keys come from Telegram (the service that taught us this hiding place) rather than local
+            // copies, so diagnostics and the production extractor can't drift apart.
             wearableDismissalId = runCatching {
-                n.extras.getBundle(WEARABLE_EXTENSIONS_EXTRA)?.getString(DISMISSAL_ID_KEY)
+                n.extras.getBundle(Telegram.WEARABLE_EXTENSIONS_EXTRA)
+                    ?.getString(Telegram.DISMISSAL_ID_KEY)
             }.getOrNull(),
             // Expo marshals the whole push payload into a byte array, so ids hidden there are invisible
             // in the raw extras dump. Decoded generically (not just for Bluesky) so a session surfaces
@@ -421,10 +425,6 @@ class NotificationForensics @Inject constructor(
             Notification.FLAG_GROUP_SUMMARY to "GROUP_SUMMARY",
             Notification.FLAG_BUBBLE to "BUBBLE",
         )
-
-        /** The AndroidX Wear extras bundle and its dismissal-id key — a known id hiding place. */
-        const val WEARABLE_EXTENSIONS_EXTRA = "android.wearable.EXTENSIONS"
-        const val DISMISSAL_ID_KEY = "dismissalId"
 
         val EXTRA_ICON_KEYS: List<String> = listOf(
             Notification.EXTRA_LARGE_ICON,

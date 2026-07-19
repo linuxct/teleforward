@@ -5,13 +5,19 @@ import space.linuxct.teleforward.data.db.entity.OutboxEntity
 /**
  * Best-effort reconstruction of a "magic link" for an outbox item just before it is sent.
  *
- * Two services are supported (see [magicLinkKind]):
- *  - **YouTube** subscription-upload notifications: given the channel id (extracted into
- *    [OutboxEntity.youtubeChannelId]) and the video title (the body), fetch YouTube's uploads feed /
- *    search and map to the video's `watch?v=` url.
- *  - **Apple Music** now-playing notifications: given the track ([OutboxEntity.title]) and artist
- *    ([OutboxEntity.body]), look them up via Apple's public iTunes Search API and map to the
- *    `music.apple.com` song url.
+ * Each supported service (see [magicLinkKind]) reconstructs from whatever its notification exposes.
+ * Only two need the network at all:
+ *  - **YouTube** uploads: channel id ([OutboxEntity.youtubeChannelId]) + video title → the uploads feed
+ *    / search → a `watch?v=` url. (Live streams and premieres name the video id outright.)
+ *  - **Apple Music** now-playing: track ([OutboxEntity.title]) + artist ([OutboxEntity.body]) → the
+ *    public iTunes Search API → a `music.apple.com` song url.
+ *
+ * The rest resolve offline, from an id the notification already carries:
+ *  - **WhatsApp** / **Signal** — the peer's phone, from the chat identity or a saved contact.
+ *  - **Discord** — the conversation shortcut (the channel id) + the `latestMessageId` extra; DMs only.
+ *  - **Telegram** — the Wear `dismissalId`; groups/supergroups only.
+ *  - **GitHub** — the `owner/repo#123` reference in the readable text.
+ *  - **Bluesky** — the post AT-URI inside Expo's marshalled notification payload.
  *
  * Everything is best-effort — any failure/timeout yields a null url, and the item is forwarded
  * normally without a `Link:` line.
@@ -92,7 +98,12 @@ data class MagicLinkTrace(
     val url: String? = null,
     /** Always true when a network fetch happened: the feed URL carried a `nocache=` cache-buster. */
     val cacheBusted: Boolean = false,
-    /** Which source produced the resolved url: `"rss"` (authoritative feed) or `"search"`; null on a miss. */
+    /**
+     * How the url was reached — **interpret this together with [service]**, since each service uses its
+     * own vocabulary: YouTube `"rss"`/`"search"`/`"slotKey"`, Discord `"shortcut"`/`"shortcut+message"`,
+     * WhatsApp/Signal `"jid"`/`"title"`/`"contacts"`, and Telegram the peer *kind*
+     * (`"chat"`/`"user"`/`"encrypted"`/`"none"`), which it also records on a miss. Null when unset.
+     */
     val source: String? = null,
     /** True when the YouTube-search fallback was attempted (after an RSS miss). */
     val searchAttempted: Boolean = false,
@@ -101,7 +112,11 @@ data class MagicLinkTrace(
     /** How many of those search results belonged to the target channel id. */
     val searchChannelMatched: Int? = null,
 
-    /** Which service produced this trace: `"youtube"` or `"appleMusic"`; null on a bare skip. */
+    /**
+     * Which service produced this trace — `"youtube"`, `"appleMusic"`, `"whatsapp"`, `"discord"`,
+     * `"telegram"`, `"github"`, `"signal"`, `"bluesky"`; null on a bare skip. Also the key for reading
+     * [source], whose vocabulary is per-service.
+     */
     val service: String? = null,
     // --- Apple Music ---
     /** The now-playing track title queried against the iTunes Search API. */

@@ -19,7 +19,7 @@ only credential.
 |---|---|---|
 | **Selective forwarding** | Choose what forwards per app, per notification channel, and per individual conversation, with INCLUDE/EXCLUDE precedence and a global pause. | — |
 | **Images & contact photos** | Forwards attached images; the sender's avatar / app logo is a separate opt-in. | images on, photos off |
-| **Magic links ✨** | Rebuilds the URL a notification is *about* — the YouTube video, the Apple Music song, the WhatsApp chat — and appends it as a `Link:` line, since Android won't let the app read the notification's own tap action. | on per supported app |
+| **Magic links ✨** | Rebuilds the URL a notification is *about* — the YouTube video, the song playing, the WhatsApp or Signal chat, the Discord DM, the Telegram message, the GitHub issue, the Bluesky post — and appends it as a `Link:` line, since Android won't let the app read the notification's own tap action. | on per supported app |
 | **Remote actions 🎛️** | Inline buttons under each forwarded message that act on the phone: dismiss, mark read, reply, or any button the source app itself offers. You can also just reply to the forwarded message. | **on** |
 | **Now playing 🎵** | One live message per media app with album art, transport buttons, and a 🔗 universal song link for the current track — a remote control for whatever is playing. | off |
 | **Always listening** | Keeps a permanent connection so button presses act instantly, instead of only during a short window after each forward. | off |
@@ -186,7 +186,8 @@ actually sent) are governed by *include images* and are unaffected by this switc
 ## Magic links ✨
 
 Some notifications are *about* something with a shareable URL — a new YouTube video, the song
-that's playing, a WhatsApp chat — but the notification text almost never contains that URL. The
+that's playing, a chat, a Discord DM, a GitHub issue, a Bluesky post — but the notification text
+almost never contains that URL. The
 link lives inside the notification's tap action (a `PendingIntent`), which Android does **not**
 let another app read.
 
@@ -247,16 +248,19 @@ no link. Honours the per-app magic-link opt-out.
 
 - **Per-app toggle, on by default.** Open a supported app under **Apps** and you'll see a
   **Reconstruct magic link** switch. Turn it off to opt that app out; the choice is remembered.
-- **It won't always land.** YouTube's feed and search results lag for busy channels; Apple Music
-  needs an exact catalogue match; WhatsApp needs a resolvable phone number. A miss simply means
-  no `Link:` line — never a broken one.
+- **It won't always land**, and each service misses differently. YouTube's feed and search lag for
+  busy channels; Apple Music needs an exact catalogue match; WhatsApp and Signal need a resolvable
+  phone number; Discord links only direct messages; Telegram only groups; GitHub skips anything that
+  mentions a discussion; Bluesky links posts but not follows or chats. A miss simply means no `Link:`
+  line — never a broken one.
 - **YouTube live streams and premieres are exact.** Those notifications identify themselves by the
   *video* id rather than the channel, so the link is built directly — instantly, with no lookup and
   no chance of picking the wrong video. Only ordinary uploads need the feed/search route.
 - **YouTube uploads self-heal.** If the first attempt (made as the message is sent) misses, the item
   still forwards immediately, and a background worker keeps re-checking for up to about an hour,
-  then **edits the already-sent Telegram message** to add the link once it resolves. (Apple Music
-  and WhatsApp resolve instantly from a single lookup, so they don't need this.)
+  then **edits the already-sent Telegram message** to add the link once it resolves. (Only YouTube
+  needs this. Apple Music resolves from a single lookup, and Discord, Telegram, GitHub, Signal and
+  Bluesky need no lookup at all — they read an id the notification already carries.)
 
 ### WhatsApp specifics
 
