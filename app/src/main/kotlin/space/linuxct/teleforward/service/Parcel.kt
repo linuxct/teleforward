@@ -40,6 +40,33 @@ object Parcel {
      */
     private val USPS_REGEX = Regex("""\b(?:420\d{5})?(\d{26}|\d{22}|\d{20})\b""")
 
+    /**
+     * A UPU **S10** international item: 2-letter service indicator, 8-digit serial, check digit,
+     * 2-letter origin country (e.g. `RR287043775IN`). Well-anchored *provided* both letter guards below
+     * are applied.
+     */
+    private val S10_REGEX = Regex("""\b([A-Z]{2})(\d{8})(\d)([A-Z]{2})\b""")
+
+    /**
+     * S10 service-indicator prefixes the UPU has **reserved and never assigns**. Rejecting them is a
+     * real guard, not pedantry: without it any two capitals followed by nine digits and two more
+     * capitals can pass.
+     */
+    private val S10_RESERVED_FIRST_LETTERS = setOf('J', 'K', 'S', 'T', 'W')
+
+    /** ISO 3166-1 alpha-2. The origin country must be a real one, else the shape is far too loose. */
+    private val ISO_COUNTRIES: Set<String> = (
+        "AD AE AF AG AI AL AM AO AQ AR AS AT AU AW AX AZ BA BB BD BE BF BG BH BI BJ BL BM BN BO BQ " +
+            "BR BS BT BV BW BY BZ CA CC CD CF CG CH CI CK CL CM CN CO CR CU CV CW CX CY CZ DE DJ DK " +
+            "DM DO DZ EC EE EG EH ER ES ET FI FJ FK FM FO FR GA GB GD GE GF GG GH GI GL GM GN GP GQ " +
+            "GR GS GT GU GW GY HK HM HN HR HT HU ID IE IL IM IN IO IQ IR IS IT JE JM JO JP KE KG KH " +
+            "KI KM KN KP KR KW KY KZ LA LB LC LI LK LR LS LT LU LV LY MA MC MD ME MF MG MH MK ML MM " +
+            "MN MO MP MQ MR MS MT MU MV MW MX MY MZ NA NC NE NF NG NI NL NO NP NR NU NZ OM PA PE PF " +
+            "PG PH PK PL PM PN PR PS PT PW PY QA RE RO RS RU RW SA SB SC SD SE SG SH SI SJ SK SL SM " +
+            "SN SO SR SS ST SV SX SY SZ TC TD TF TG TH TJ TK TL TM TN TO TR TT TV TW TZ UA UG UM US " +
+            "UY UZ VA VC VE VG VI VN VU WF WS YE YT ZA ZM ZW"
+        ).split(' ').toSet()
+
     /** Upper bound on tracking links synthesised per notification. */
     const val MAX_TRACKING_LINKS = 3
 
@@ -48,6 +75,13 @@ object Parcel {
 
     fun uspsUrl(tracking: String): String =
         "https://tools.usps.com/go/TrackConfirmAction?qtc_tLabels1=$tracking"
+
+    /**
+     * S10 is carried by whichever postal operator handles it, and there is **no universal official
+     * tracking page** — so unlike UPS/USPS this necessarily points at a third-party aggregator, which
+     * therefore learns the tracking number. Called out in the README so it is a choice, not a surprise.
+     */
+    fun s10Url(tracking: String): String = "https://t.17track.net/en#nums=$tracking"
 
     /**
      * Pure: every carrier tracking url derivable from [texts], de-duplicated in first-seen order and
@@ -68,6 +102,11 @@ object Parcel {
                 // group(1) is the number without the 420+ZIP5 routing prefix.
                 val candidate = m.groupValues[1]
                 if (isValidUsps(candidate)) out += uspsUrl(candidate)
+                if (out.size >= MAX_TRACKING_LINKS) return out.toList()
+            }
+            for (m in S10_REGEX.findAll(s)) {
+                val candidate = m.value
+                if (isValidS10(candidate)) out += s10Url(candidate)
                 if (out.size >= MAX_TRACKING_LINKS) return out.toList()
             }
         }
@@ -107,6 +146,36 @@ object Parcel {
      * `9[1-5]` must have `"91"` prepended before checksumming — miss that and valid Signature
      * Confirmation numbers are wrongly rejected.
      */
+    /**
+     * Pure: a UPU S10 number's mod-11 check digit, plus the two structural guards that actually make it
+     * safe in free text.
+     *
+     * Checksum: weights `8,6,4,2,3,5,9,7` across the 8 serial digits, `r = sum mod 11`, then
+     * `r == 0 → 5`, `r == 1 → 0`, else `11 - r`.
+     *
+     * Guards, both required: the service indicator must not start with a **reserved** letter the UPU
+     * never assigns ([S10_RESERVED_FIRST_LETTERS]), and the origin must be a real **ISO country**.
+     * An all-zero serial is also rejected — it checksums to 5, so `XX000000005YY` would otherwise pass.
+     */
+    fun isValidS10(tracking: String): Boolean {
+        val m = S10_REGEX.find(tracking.trim()) ?: return false
+        if (m.value.length != tracking.trim().length) return false
+        val (service, serial, check, country) = m.destructured
+        if (service[0] in S10_RESERVED_FIRST_LETTERS) return false
+        if (country !in ISO_COUNTRIES) return false
+        if (serial.all { it == '0' }) return false
+        val weights = intArrayOf(8, 6, 4, 2, 3, 5, 9, 7)
+        var sum = 0
+        for (i in serial.indices) sum += (serial[i] - '0') * weights[i]
+        val remainder = sum % 11
+        val expected = when (remainder) {
+            0 -> 5
+            1 -> 0
+            else -> 11 - remainder
+        }
+        return expected == check[0] - '0'
+    }
+
     fun isValidUsps(digits: String): Boolean {
         if (digits.length != 20 && digits.length != 22 && digits.length != 26) return false
         if (!digits.all { it.isDigit() }) return false

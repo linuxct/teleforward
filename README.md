@@ -230,12 +230,19 @@ simply never linkable.
 app, an email — is turned into its carrier tracking link and forwarded alongside any real links.
 This is app-agnostic, because tracking numbers don't come from one app.
 
-Only **UPS** and **USPS** are detected, on purpose. A check digit is only a *10× filter*, so it is
-the number's **structure** that makes detection safe: UPS is anchored by its `1Z` prefix, USPS by its
-unusual 20/22/26-digit length. FedEx (a bare 12-digit number) and DHL Express (a bare 10-digit
-number, i.e. the shape of a phone number) have no such anchor — `123456789012` is a valid FedEx
-checksum and `2125551234` a valid DHL one — so they are excluded rather than risk turning an order
-id or a phone number into a wrong link.
+Only **UPS**, **USPS** and **international post (UPU S10** — e.g. `RR287043775IN`, what Correos and
+most postal operators use**)** are detected, on purpose. A check digit is only a *10× filter*, so it
+is the number's **structure** that makes detection safe: UPS is anchored by its `1Z` prefix, USPS by
+its unusual 20/22/26-digit length, S10 by its letter/digit layout plus a real service indicator and a
+real ISO country. FedEx (a bare 12-digit number) and DHL Express (a bare 10-digit number, i.e. the
+shape of a phone number) have no such anchor — `123456789012` is a valid FedEx checksum and
+`2125551234` a valid DHL one — so they are excluded rather than risk turning an order id or a phone
+number into a wrong link.
+
+⚠️ **One caveat on S10.** UPS and USPS links go to the carrier itself. S10 has no universal official
+tracking page, so its link goes to a **third-party aggregator** (17track), which therefore sees the
+tracking number. If you'd rather that never happen, the whole feature is inert unless a notification
+actually contains a tracking number — but there is currently no separate switch for it.
 
 **Now playing, any player.** The *Now playing* control (see below) adds a `🔗` link to its card for
 **every** media player — Spotify, YouTube Music, Deezer, Tidal, an offline player, whatever is

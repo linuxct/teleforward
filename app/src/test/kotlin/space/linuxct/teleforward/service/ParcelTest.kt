@@ -72,6 +72,46 @@ class ParcelTest {
         assertFalse("no leading 9", Parcel.isValidUsps("1234567890123456789012"))
     }
 
+    // --- UPU S10 (international post) ------------------------------------------------------------
+
+    @Test
+    fun `accepts real s10 numbers`() {
+        assertTrue(Parcel.isValidS10("RR287043775IN"))
+        assertTrue(Parcel.isValidS10("RB123456785GB"))
+    }
+
+    @Test
+    fun `rejects s10 with a bad check digit`() {
+        assertFalse(Parcel.isValidS10("RR287043774IN"))
+    }
+
+    @Test
+    fun `rejects a reserved s10 service indicator`() {
+        // JA-JZ, KA-KZ, SA-SZ, TA-TZ and WA-WZ are never assigned by the UPU. Without this guard any
+        // two capitals + nine digits + two capitals would pass.
+        assertFalse("SA is reserved", Parcel.isValidS10("SA287043775IN"))
+        assertFalse("TA is reserved", Parcel.isValidS10("TA287043775IN"))
+        assertFalse("WZ is reserved", Parcel.isValidS10("WZ287043775IN"))
+    }
+
+    @Test
+    fun `rejects an unreal origin country`() {
+        assertFalse(Parcel.isValidS10("RR287043775XX"))
+        assertFalse(Parcel.isValidS10("RR287043775ZZ"))
+    }
+
+    @Test
+    fun `rejects an all-zero serial`() {
+        // 00000000 checksums to 5, so without this guard XX000000005YY would validate.
+        assertFalse(Parcel.isValidS10("RR000000005IN"))
+    }
+
+    @Test
+    fun `extracts an s10 number and links the aggregator`() {
+        val urls = Parcel.trackingUrls(listOf("Tu envío RR287043775IN está en camino"))
+        assertEquals(listOf("https://t.17track.net/en#nums=RR287043775IN"), urls)
+    }
+
     // --- the adversarial cases that motivated the carrier allowlist -----------------------------
 
     @Test
