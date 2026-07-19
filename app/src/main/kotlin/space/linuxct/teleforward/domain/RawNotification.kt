@@ -69,4 +69,11 @@ data class RawNotification(
      * can deep-link to the message rather than just the channel. Null for every other app.
      */
     val discordMessageId: String? = null,
+    /**
+     * Telegram's Wear `dismissalId` (`extras["android.wearable.EXTENSIONS"]["dismissalId"]`) — the one
+     * readable field naming both the peer and the message (`tgchat<id>_<msgId>` / `tguser…` / `tgenc…`).
+     * Stored raw and parsed at resolve time (see [space.linuxct.teleforward.data.link.Telegram]); null
+     * for other apps, and for OEMs that prune the wearable extras bundle.
+     */
+    val telegramDismissalId: String? = null,
 )

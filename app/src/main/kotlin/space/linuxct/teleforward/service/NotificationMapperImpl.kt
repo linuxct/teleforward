@@ -20,6 +20,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import space.linuxct.teleforward.data.db.entity.OutboxImageKind
 import space.linuxct.teleforward.data.link.Discord
+import space.linuxct.teleforward.data.link.Telegram
 import space.linuxct.teleforward.data.link.YouTube
 import space.linuxct.teleforward.domain.NotificationActionInfo
 import space.linuxct.teleforward.domain.RawNotification
@@ -307,6 +308,7 @@ class NotificationMapperImpl @Inject constructor(
             isMedia = playSalt != null,
             isGroupConversation = extractIsGroupConversation(sbn),
             discordMessageId = extractDiscordMessageId(sbn),
+            telegramDismissalId = extractTelegramDismissalId(sbn),
         )
     }
 
@@ -521,6 +523,26 @@ class NotificationMapperImpl @Inject constructor(
                 runCatching { extras.getString(Discord.MESSAGE_ID_EXTRA) }.getOrNull()?.trim()
             }
             candidate?.takeIf { Discord.snowflakeRegex.matches(it) }
+        } else {
+            null
+        }
+    } catch (t: Throwable) {
+        null
+    }
+
+    /**
+     * Best-effort Telegram Wear `dismissalId` — the only readable field naming both the peer and the
+     * message, which is what makes a `t.me/c/` link reconstructable. Lives in a NESTED bundle
+     * (`android.wearable.EXTENSIONS`), and some OEMs prune that bundle entirely, so a null here is an
+     * expected outcome rather than an error. Null for every other package. Fully try/caught.
+     */
+    private fun extractTelegramDismissalId(sbn: StatusBarNotification): String? = try {
+        if (sbn.packageName in Telegram.PACKAGES) {
+            sbn.notification.extras
+                .getBundle(Telegram.WEARABLE_EXTENSIONS_EXTRA)
+                ?.getString(Telegram.DISMISSAL_ID_KEY)
+                ?.trim()
+                ?.takeUnless { it.isBlank() }
         } else {
             null
         }

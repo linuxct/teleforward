@@ -206,10 +206,14 @@ link: TeleForward would rather add nothing than send you to the wrong video or c
 | **Apple Music** | track + artist (now-playing) | `music.apple.com/…` (the song) | Apple's public iTunes Search API |
 | **WhatsApp** | the chat's phone number | `web.whatsapp.com/send/…` (opens the chat) | phone from the chat identity, or a saved contact (opt-in) |
 | **Discord** | the channel id (conversation shortcut) + the message id | `discord.com/channels/@me/…` (opens the DM, on the message) | **direct messages only** — a server channel's link needs a guild id the notification never exposes |
+| **Telegram** | the chat + message id, from the Wear `dismissalId` | `t.me/c/…` (the message) | **groups/supergroups only** — Telegram publishes no shareable per-message link for private chats, and secret chats are never linked |
 
 Packages covered: YouTube (`com.google.android.youtube` plus common re-packaged clients), Apple
-Music (`com.apple.android.music`), WhatsApp (`com.whatsapp`, `com.whatsapp.w4b`), and Discord
-(`com.discord`).
+Music (`com.apple.android.music`), WhatsApp (`com.whatsapp`, `com.whatsapp.w4b`), Discord
+(`com.discord`), and Telegram (`org.telegram.messenger` plus the common forks).
+
+A `t.me/c/` link opens only for **members** of that chat and has no web preview — it's a link back to
+your own conversation, not something a stranger can open.
 
 **Now playing, any player.** The *Now playing* control (see below) adds a `🔗` link to its card for
 **every** media player — Spotify, YouTube Music, Deezer, Tidal, an offline player, whatever is

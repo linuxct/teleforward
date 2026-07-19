@@ -94,6 +94,13 @@ data class OutboxEntity(
      */
     val discordMessageId: String? = null,
     /**
+     * Telegram's Wear `dismissalId` — the one readable field naming both the peer and the message
+     * (`tgchat<id>_<msgId>` / `tguser…` / `tgenc…`). Stored raw and parsed at resolve time; only the
+     * group form is linkable (see [space.linuxct.teleforward.data.link.Telegram]). Null for other apps
+     * and for pre-feature rows.
+     */
+    val telegramDismissalId: String? = null,
+    /**
      * Tier-0 harvested `http`/`https` links found anywhere in the notification, stored newline-joined
      * (URLs contain no newlines); null/blank when none. Appended at send time to any that aren't
      * already inline in the body.

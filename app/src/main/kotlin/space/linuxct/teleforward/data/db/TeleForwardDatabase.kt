@@ -35,7 +35,7 @@ import space.linuxct.teleforward.data.db.entity.SelectionRuleEntity
         NowPlayingSessionEntity::class,
         MediaForwardEntity::class,
     ],
-    version = 14,
+    version = 15,
     exportSchema = true,
 )
 @TypeConverters(Converters::class)
@@ -323,6 +323,18 @@ abstract class TeleForwardDatabase : RoomDatabase() {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("ALTER TABLE `outbox` ADD COLUMN `isGroupConversation` INTEGER")
                 db.execSQL("ALTER TABLE `outbox` ADD COLUMN `discordMessageId` TEXT")
+            }
+        }
+
+        /**
+         * v14 → v15: `telegramDismissalId`, Telegram's Wear `dismissalId`. It is the only readable field
+         * that names both the peer and the message (`tgchat<id>_<msgId>`), which is what makes a
+         * `t.me/c/` message link reconstructable. Additive and nullable; existing rows keep NULL and
+         * simply get no Telegram link.
+         */
+        val MIGRATION_14_15 = object : Migration(14, 15) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `outbox` ADD COLUMN `telegramDismissalId` TEXT")
             }
         }
     }

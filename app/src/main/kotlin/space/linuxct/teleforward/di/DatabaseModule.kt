@@ -46,6 +46,7 @@ object DatabaseModule {
                 TeleForwardDatabase.MIGRATION_11_12,
                 TeleForwardDatabase.MIGRATION_12_13,
                 TeleForwardDatabase.MIGRATION_13_14,
+                TeleForwardDatabase.MIGRATION_14_15,
             )
             .fallbackToDestructiveMigration(dropAllTables = true)
             .build()

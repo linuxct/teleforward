@@ -17,6 +17,13 @@ enum class MagicLinkKind {
      * channels are deliberately not linkable — their url needs a guild id no readable field carries.
      */
     DISCORD,
+
+    /**
+     * Telegram **group / supergroup** notifications → a `t.me/c/<channelId>/<messageId>` url (from the
+     * Wear `dismissalId`). Private and secret chats are not linkable — Telegram exposes no shareable
+     * per-message link for them.
+     */
+    TELEGRAM,
 }
 
 /**
@@ -29,5 +36,6 @@ fun magicLinkKind(packageName: String): MagicLinkKind? = when (packageName) {
     in AppleMusic.PACKAGES -> MagicLinkKind.APPLE_MUSIC
     in WhatsApp.PACKAGES -> MagicLinkKind.WHATSAPP
     in Discord.PACKAGES -> MagicLinkKind.DISCORD
+    in Telegram.PACKAGES -> MagicLinkKind.TELEGRAM
     else -> null
 }

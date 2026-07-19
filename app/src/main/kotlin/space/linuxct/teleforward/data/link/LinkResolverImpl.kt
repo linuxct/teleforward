@@ -97,6 +97,7 @@ class LinkResolverImpl @Inject constructor(
                 MagicLinkKind.APPLE_MUSIC -> reconstructAppleMusic(item)
                 MagicLinkKind.WHATSAPP -> reconstructWhatsApp(item)
                 MagicLinkKind.DISCORD -> reconstructDiscord(item)
+                MagicLinkKind.TELEGRAM -> reconstructTelegram(item)
             }
         }
     } catch (t: Throwable) {
@@ -370,6 +371,46 @@ class LinkResolverImpl @Inject constructor(
                     outcome = MagicLinkOutcome.MATCHED,
                     service = Discord.SERVICE,
                     source = if (item.discordMessageId != null) SOURCE_DISCORD_MESSAGE else SOURCE_DISCORD_CHANNEL,
+                ),
+            )
+        }
+    }
+
+    /**
+     * Telegram reconstruction → `t.me/c/<channelId>/<messageId>` from the Wear `dismissalId`
+     * ([OutboxEntity.telegramDismissalId]), the one readable field that names both the peer and the
+     * message. Only the `tgchat…` (group / supergroup) form is linkable: Telegram exposes no shareable
+     * per-message link for a private chat, and a secret chat must never be linked — both yield NO_MATCH.
+     *
+     * No network. The trace records the peer KIND (`chat` / `user` / `encrypted` / `none`) so a miss is
+     * explainable, never the id itself (a chat identity; diagnostics are shareable).
+     */
+    private fun reconstructTelegram(item: OutboxEntity): MagicLinkResult {
+        val dismissalId = item.telegramDismissalId
+        val kind = Telegram.peerKind(dismissalId)
+        val url = Telegram.messageUrl(dismissalId)
+        return if (url != null) {
+            MagicLinkResult(
+                url,
+                MagicLinkTrace(
+                    outcome = MagicLinkOutcome.MATCHED,
+                    service = Telegram.SERVICE,
+                    source = kind,
+                ),
+            )
+        } else {
+            MagicLinkResult(
+                null,
+                MagicLinkTrace(
+                    outcome = MagicLinkOutcome.NO_MATCH,
+                    service = Telegram.SERVICE,
+                    source = kind,
+                    error = when (kind) {
+                        "user" -> "private chat: telegram has no shareable per-message link"
+                        "encrypted" -> "secret chat: never linked"
+                        "none" -> "no wearable dismissalId (absent, or pruned by the OEM)"
+                        else -> "dismissalId not in the expected tgchat<id>_<msgId> shape"
+                    },
                 ),
             )
         }
