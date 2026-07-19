@@ -1,7 +1,11 @@
 package space.linuxct.teleforward.data.telegram
 
 import androidx.work.WorkManager
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import space.linuxct.teleforward.data.db.dao.NowPlayingSessionDao
@@ -89,6 +93,12 @@ class NowPlayingController @Inject constructor(
     private val mutex = Mutex()
 
     /**
+     * Scope for the off-critical-path song-link lookup ([scheduleLinkResolve]). A `SupervisorJob` so one
+     * failed lookup can't cancel later ones; process-lifetime, matching this `@Singleton`.
+     */
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
+    /**
      * In-memory mirror of the track each package's live control is showing, so [needsArtwork] can be
      * answered instantly — the caller must decide whether to extract artwork *before* doing anything
      * slow, because the notification's bitmap is only reliably readable right after it arrives.
@@ -141,7 +151,22 @@ class NowPlayingController @Inject constructor(
             if (!settings.nowPlayingEnabled.first()) return
 
             val trackKey = trackKeyOf(title, text)
-            val link = mediaLink(packageName, trackKey, title, text)
+            // Decide the song link WITHOUT blocking on the network: a same-track edit reuses the cached
+            // link, a new track renders without one and resolves in the background (see below), so the
+            // card appears immediately instead of waiting on the iTunes lookup.
+            val linkAction = mediaLinkAction(
+                songLinkEnabled = settings.nowPlayingSongLink.first(),
+                packageOptedOut = packageName in settings.magicLinkDisabledPackages.first(),
+                sameTrackAsRendered = renderedTracks[packageName] == trackKey,
+                track = title?.trim().orEmpty(),
+                artist = text?.trim().orEmpty(),
+            )
+            val link = if (linkAction == MediaLinkAction.REUSE_CACHED) resolvedLinks[packageName] else null
+            // A new or unusable track must not keep showing the previous track's link. (An opted-out
+            // package keeps its cache, so re-enabling restores the link without another lookup.)
+            if (linkAction == MediaLinkAction.RESOLVE || linkAction == MediaLinkAction.SKIP_BLANK) {
+                resolvedLinks.remove(packageName)
+            }
             val body = renderText(appLabel, title, text, link)
             val fingerprint = fingerprintOf(trackKey, notificationKey, actions)
             val now = System.currentTimeMillis()
@@ -181,6 +206,13 @@ class NowPlayingController @Inject constructor(
 
                     // Byte-identical re-post — media notifications repeat constantly. Do nothing.
                     else -> Unit
+                }
+
+                // A brand-new track that wants a link: resolve off the critical path and edit it in.
+                if (sentNewMessage && linkAction == MediaLinkAction.RESOLVE) {
+                    scheduleLinkResolve(
+                        packageName, chatId, trackKey, appLabel, title, text, notificationKey, actions,
+                    )
                 }
             }
         }
@@ -342,33 +374,54 @@ class NowPlayingController @Inject constructor(
      * so the cached link is reused without a lookup; otherwise the (title=track, text=artist) pair is
      * resolved via [LinkResolver.resolveMediaLink].
      */
-    private suspend fun mediaLink(
+    /**
+     * Resolve the universal song link **off the critical path** and edit it into the card once it
+     * lands. The lookup is a network round trip (usually sub-second, but up to the client's timeout), and
+     * doing it inline delayed the whole now-playing message behind it — the control is the point of the
+     * feature, the link is a bonus, so the control must not wait.
+     *
+     * Guarded by re-reading the session under the mutex: if the user skipped on, the stored `trackKey`
+     * no longer matches and the edit is dropped rather than stamping the old song's link onto the new
+     * card. The keyboard is rebuilt in the same edit because Telegram drops an omitted `reply_markup`,
+     * which would otherwise strip the transport buttons.
+     *
+     * Best-effort throughout: any failure simply leaves the card without a link.
+     */
+    private fun scheduleLinkResolve(
         packageName: String,
+        chatId: Long,
         trackKey: String,
+        appLabel: String,
         title: String?,
         text: String?,
-    ): String? {
-        val track = title?.trim().orEmpty()
-        val artist = text?.trim().orEmpty()
-        val action = mediaLinkAction(
-            songLinkEnabled = settings.nowPlayingSongLink.first(),
-            packageOptedOut = packageName in settings.magicLinkDisabledPackages.first(),
-            sameTrackAsRendered = renderedTracks[packageName] == trackKey,
-            track = track,
-            artist = artist,
-        )
-        return when (action) {
-            MediaLinkAction.SKIP_DISABLED -> null
-            MediaLinkAction.REUSE_CACHED -> resolvedLinks[packageName]
-            MediaLinkAction.SKIP_BLANK -> {
-                resolvedLinks.remove(packageName)
-                null
-            }
-
-            MediaLinkAction.RESOLVE -> {
-                val link = linkResolver.resolveMediaLink(track, artist)
-                if (link != null) resolvedLinks[packageName] = link else resolvedLinks.remove(packageName)
-                link
+        notificationKey: String,
+        actions: List<NotificationActionInfo>,
+    ) {
+        scope.launch {
+            runCatching {
+                val track = title?.trim().orEmpty()
+                val artist = text?.trim().orEmpty()
+                if (track.isBlank() || artist.isBlank()) return@runCatching
+                val link = linkResolver.resolveMediaLink(track, artist) ?: return@runCatching
+                mutex.withLock {
+                    val session = sessionDao.find(packageName) ?: return@withLock
+                    // Still the same song? If not, the link belongs to a track that is no longer shown.
+                    if (session.trackKey != trackKey) return@withLock
+                    resolvedLinks[packageName] = link
+                    val body = renderText(appLabel, title, text, link)
+                    val markup = keyboards.replaceKeyboardForMessage(
+                        notificationKey = notificationKey,
+                        actions = actions,
+                        chatId = chatId,
+                        messageId = session.messageId,
+                        now = System.currentTimeMillis(),
+                    )
+                    if (session.photoMessage == true) {
+                        sender.editCaption(chatId, session.messageId, body, markup)
+                    } else {
+                        sender.editMessage(chatId, session.messageId, body, markup)
+                    }
+                }
             }
         }
     }
