@@ -126,6 +126,13 @@ interface SettingsRepository {
      */
     val nowPlayingEnabled: Flow<Boolean>
 
+    /**
+     * Whether the now-playing card carries a `🔗` universal song link (resolved from the track + artist
+     * via the iTunes Search API and wrapped in a song.link page). Global, because most players have no
+     * `MagicLinkKind` and so no per-app magic-link toggle of their own. Default on.
+     */
+    val nowPlayingSongLink: Flow<Boolean>
+
     suspend fun setChatId(chatId: Long?)
 
     suspend fun setChatDisplayName(name: String?)
@@ -165,6 +172,8 @@ interface SettingsRepository {
     suspend fun setRemoteActionsOffset(offset: Long)
 
     suspend fun setNowPlayingEnabled(enabled: Boolean)
+
+    suspend fun setNowPlayingSongLink(enabled: Boolean)
 
     suspend fun setIncludeAvatars(enabled: Boolean)
 

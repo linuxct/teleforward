@@ -141,6 +141,7 @@ fun SettingsRoute(onBack: () -> Unit) {
             }
         },
         onSetNowPlayingEnabled = viewModel::setNowPlayingEnabled,
+        onSetNowPlayingSongLink = viewModel::setNowPlayingSongLink,
         onDumpDiagnostics = viewModel::dumpDiagnostics,
         onClearDiagnostics = viewModel::clearDiagnostics,
     )
@@ -168,6 +169,7 @@ private fun SettingsScreen(
     onSetRemoteActionsEnabled: (Boolean) -> Unit,
     onSetRemoteActionsAlwaysOn: (Boolean) -> Unit,
     onSetNowPlayingEnabled: (Boolean) -> Unit,
+    onSetNowPlayingSongLink: (Boolean) -> Unit,
     onDumpDiagnostics: () -> Unit,
     onClearDiagnostics: () -> Unit,
 ) {
@@ -209,6 +211,7 @@ private fun SettingsScreen(
                 onSetRemoteActionsEnabled = onSetRemoteActionsEnabled,
                 onSetRemoteActionsAlwaysOn = onSetRemoteActionsAlwaysOn,
                 onSetNowPlayingEnabled = onSetNowPlayingEnabled,
+                onSetNowPlayingSongLink = onSetNowPlayingSongLink,
             )
 
             SectionHeader(stringResource(R.string.settings_section_maintenance))
@@ -722,6 +725,7 @@ private fun RemoteActionsCard(
     onSetRemoteActionsEnabled: (Boolean) -> Unit,
     onSetRemoteActionsAlwaysOn: (Boolean) -> Unit,
     onSetNowPlayingEnabled: (Boolean) -> Unit,
+    onSetNowPlayingSongLink: (Boolean) -> Unit,
 ) {
     SettingsCard {
         SettingSwitchRow(
@@ -738,6 +742,17 @@ private fun RemoteActionsCard(
                 checked = state.nowPlayingEnabled,
                 onCheckedChange = onSetNowPlayingEnabled,
             )
+            // Nested under Now playing: most players have no per-app magic-link toggle to hang this
+            // off, so the song link needs its own switch or it can't be turned off at all.
+            if (state.nowPlayingEnabled) {
+                HorizontalDivider()
+                SettingSwitchRow(
+                    title = stringResource(R.string.settings_song_link_title),
+                    subtitle = stringResource(R.string.settings_song_link_subtitle),
+                    checked = state.nowPlayingSongLink,
+                    onCheckedChange = onSetNowPlayingSongLink,
+                )
+            }
             HorizontalDivider()
             SettingSwitchRow(
                 title = stringResource(R.string.settings_always_on_title),

@@ -68,6 +68,8 @@
     <string name="settings_action_buttons_subtitle">Añade botones de Descartar, Marcar como leída y Responder bajo los mensajes reenviados, y actúa en este dispositivo al pulsarlos. Para responder, responde al mensaje reenviado.</string>
     <string name="settings_now_playing_title">Control de reproducción</string>
     <string name="settings_now_playing_subtitle">Las notificaciones multimedia se omiten normalmente. Con esto activado, cada aplicación de música mantiene UN solo mensaje en el chat, editado sobre la marcha al cambiar de pista, con sus propios botones de control, para que manejes la reproducción sin un mensaje por canción.</string>
+    <string name="settings_song_link_title">Enlace a la canción</string>
+    <string name="settings_song_link_subtitle">Añade un enlace a la pista actual, para que se abra en el servicio de música que uses. La canción y el artista se consultan en línea cada vez que cambia el tema; desactívalo para mantener la tarjeta sin conexión.</string>
     <string name="settings_always_on_title">Escucha permanente</string>
     <string name="settings_always_on_subtitle">Mantiene una notificación fija para que las pulsaciones actúen al instante. Desactivado, la aplicación solo escucha unos minutos tras cada reenvío: si pulsas un botón más tarde, puede que no llegue hasta el siguiente.</string>
     <string name="settings_remote_actions_footnote">Los botones solo funcionan mientras la notificación siga en este dispositivo; una vez desaparece, TeleForward responde que ya no está disponible.</string>

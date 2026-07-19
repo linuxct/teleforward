@@ -68,6 +68,8 @@
     <string name="settings_action_buttons_subtitle">Add Dismiss / Mark read / Reply buttons under forwarded messages, and act on this device when you press them. Reply by replying to the forwarded message.</string>
     <string name="settings_now_playing_title">Now playing control</string>
     <string name="settings_now_playing_subtitle">Media notifications are normally skipped. With this on, each media app keeps ONE message in the chat — edited in place as the track changes — with its own transport buttons, so you can control playback without a message per track.</string>
+    <string name="settings_song_link_title">Song link</string>
+    <string name="settings_song_link_subtitle">Adds a link to the current track, so it opens in whatever music service you use. The track and artist are looked up online each time the song changes; turn this off to keep the card offline.</string>
     <string name="settings_always_on_title">Always listening</string>
     <string name="settings_always_on_subtitle">Keep a permanent notification so presses act immediately. Off, the app only listens for a few minutes after each forward — press a button later and it may not arrive until the next one.</string>
     <string name="settings_remote_actions_footnote">Buttons only work while the notification is still on this device — once it\'s gone, TeleForward replies that it\'s no longer available.</string>

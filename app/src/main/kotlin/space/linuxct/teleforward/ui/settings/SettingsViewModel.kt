@@ -92,6 +92,7 @@ data class SettingsUiState(
     val remoteActionsEnabled: Boolean = false,
     val remoteActionsAlwaysOn: Boolean = false,
     val nowPlayingEnabled: Boolean = false,
+    val nowPlayingSongLink: Boolean = true,
     val diagRecordCount: Int = 0,
     val dumpState: DumpState = ActionState.Idle,
 ) {
@@ -157,6 +158,7 @@ class SettingsViewModel @Inject constructor(
         settings.remoteActionsEnabled.bind { s, v -> s.copy(remoteActionsEnabled = v) }
         settings.remoteActionsAlwaysOn.bind { s, v -> s.copy(remoteActionsAlwaysOn = v) }
         settings.nowPlayingEnabled.bind { s, v -> s.copy(nowPlayingEnabled = v) }
+        settings.nowPlayingSongLink.bind { s, v -> s.copy(nowPlayingSongLink = v) }
         refreshListenerHealth()
     }
 
@@ -312,6 +314,9 @@ class SettingsViewModel @Inject constructor(
 
     fun setNowPlayingEnabled(enabled: Boolean) =
         launchSetter { settings.setNowPlayingEnabled(enabled) }
+
+    fun setNowPlayingSongLink(enabled: Boolean) =
+        launchSetter { settings.setNowPlayingSongLink(enabled) }
 
     fun setOutboxExpiryHours(hours: Int) {
         val clamped = hours.coerceIn(

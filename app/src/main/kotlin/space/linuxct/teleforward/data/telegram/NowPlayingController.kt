@@ -16,6 +16,43 @@ import java.io.File
 import javax.inject.Inject
 import javax.inject.Singleton
 
+/** What [NowPlayingController]'s song-link step should do for one update. See [mediaLinkAction]. */
+internal enum class MediaLinkAction {
+    /** Song link is off globally, or magic links are opted out for this package. */
+    SKIP_DISABLED,
+
+    /** Same track as last rendered — only the transport state changed. Reuse, don't look up again. */
+    REUSE_CACHED,
+
+    /** No usable track/artist text to look anything up with. */
+    SKIP_BLANK,
+
+    /** A new track with usable text: do the (network) lookup. */
+    RESOLVE,
+}
+
+/**
+ * Pure: decide the song-link step for one now-playing update.
+ *
+ * Extracted from [NowPlayingController] precisely so the **order** of these checks is testable. Putting
+ * the cache check first was a real bug: because the rendered-track cache is written after every send or
+ * edit, turning the song link off mid-song kept serving the cached `🔗` line on every subsequent
+ * play/pause edit until the track changed, so the setting looked like it hadn't applied. The opt-outs
+ * must therefore be evaluated **before** the cache.
+ */
+internal fun mediaLinkAction(
+    songLinkEnabled: Boolean,
+    packageOptedOut: Boolean,
+    sameTrackAsRendered: Boolean,
+    track: String,
+    artist: String,
+): MediaLinkAction = when {
+    !songLinkEnabled || packageOptedOut -> MediaLinkAction.SKIP_DISABLED
+    sameTrackAsRendered -> MediaLinkAction.REUSE_CACHED
+    track.isBlank() || artist.isBlank() -> MediaLinkAction.SKIP_BLANK
+    else -> MediaLinkAction.RESOLVE
+}
+
 /**
  * Keeps **one** "now playing" message per media app in the chat and edits it in place.
  *
@@ -176,6 +213,7 @@ class NowPlayingController @Inject constructor(
                 val session = sessionDao.find(packageName) ?: return
                 sessionDao.delete(packageName)
                 renderedTracks.remove(packageName)
+                resolvedLinks.remove(packageName)
                 keyboards.clearKeyboardForMessage(chatId, session.messageId)
                 // Playback is over, so the pin bar should stop advertising it. The message itself
                 // stays (rewritten to "playback ended") — only its prominence is withdrawn.
@@ -273,6 +311,7 @@ class NowPlayingController @Inject constructor(
             is SendResult.Terminal, is SendResult.BadRequest -> {
                 sessionDao.delete(packageName)
                 renderedTracks.remove(packageName)
+                resolvedLinks.remove(packageName)
                 sendNew(
                     packageName, chatId, notificationKey, body, actions,
                     trackKey, fingerprint, now, albumArtPath = null,
@@ -309,14 +348,29 @@ class NowPlayingController @Inject constructor(
         title: String?,
         text: String?,
     ): String? {
-        if (renderedTracks[packageName] == trackKey) return resolvedLinks[packageName]
-        if (packageName in settings.magicLinkDisabledPackages.first()) return null
         val track = title?.trim().orEmpty()
         val artist = text?.trim().orEmpty()
-        if (track.isBlank() || artist.isBlank()) return null
-        val link = linkResolver.resolveMediaLink(track, artist)
-        if (link != null) resolvedLinks[packageName] = link else resolvedLinks.remove(packageName)
-        return link
+        val action = mediaLinkAction(
+            songLinkEnabled = settings.nowPlayingSongLink.first(),
+            packageOptedOut = packageName in settings.magicLinkDisabledPackages.first(),
+            sameTrackAsRendered = renderedTracks[packageName] == trackKey,
+            track = track,
+            artist = artist,
+        )
+        return when (action) {
+            MediaLinkAction.SKIP_DISABLED -> null
+            MediaLinkAction.REUSE_CACHED -> resolvedLinks[packageName]
+            MediaLinkAction.SKIP_BLANK -> {
+                resolvedLinks.remove(packageName)
+                null
+            }
+
+            MediaLinkAction.RESOLVE -> {
+                val link = linkResolver.resolveMediaLink(track, artist)
+                if (link != null) resolvedLinks[packageName] = link else resolvedLinks.remove(packageName)
+                link
+            }
+        }
     }
 
     /** `🎵 <b>Track</b>` / artist / app / 🔗 link — mirrors the notification without pretending to be a forward. */
