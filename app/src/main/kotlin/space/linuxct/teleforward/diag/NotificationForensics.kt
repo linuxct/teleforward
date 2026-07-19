@@ -15,6 +15,7 @@ import androidx.core.app.NotificationCompat
 import dagger.hilt.android.qualifiers.ApplicationContext
 import org.json.JSONArray
 import org.json.JSONObject
+import space.linuxct.teleforward.data.link.Bluesky
 import space.linuxct.teleforward.data.link.magicLinkKind
 import space.linuxct.teleforward.service.resolveUserSerial
 import javax.inject.Inject
@@ -143,6 +144,12 @@ class NotificationForensics @Inject constructor(
             extrasKeys = runCatching { n.extras.keySet() }.getOrNull() ?: emptySet(),
             wearableDismissalId = runCatching {
                 n.extras.getBundle(WEARABLE_EXTENSIONS_EXTRA)?.getString(DISMISSAL_ID_KEY)
+            }.getOrNull(),
+            // Expo marshals the whole push payload into a byte array, so ids hidden there are invisible
+            // in the raw extras dump. Decoded generically (not just for Bluesky) so a session surfaces
+            // the same pattern in any Expo-built app.
+            expoPayloadUri = runCatching {
+                Bluesky.postUriFromExpoPayload(n.extras.getByteArray(Bluesky.EXPO_REQUEST_EXTRA))
             }.getOrNull(),
         )
     }

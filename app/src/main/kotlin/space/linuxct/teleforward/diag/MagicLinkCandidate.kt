@@ -60,6 +60,13 @@ object MagicLinkCandidate {
          * sits one bundle down.
          */
         wearableDismissalId: String? = null,
+        /**
+         * Any AT-URI / id-bearing text recovered from Expo's marshalled notification payload
+         * (`expo.notification_request`). Worth surfacing for **every** app: Expo populates this for
+         * *any* app built with it, and it is where Bluesky's post id hides — invisible in a raw dump
+         * because it is a byte array, not a string.
+         */
+        expoPayloadUri: String? = null,
     ): JSONObject {
         val o = JSONObject()
         o.put("package", packageName)
@@ -72,6 +79,7 @@ object MagicLinkCandidate {
         isGroupConversation?.let { o.put("isGroupConversation", it) }
         conversationTitle?.let { o.put("conversationTitle", it) }
         wearableDismissalId?.let { o.put("wearableDismissalId", it) }
+        expoPayloadUri?.let { o.put("expoPayloadUri", it) }
 
         val present = JSONArray()
         for (key in INTERESTING_EXTRAS_KEYS) if (key in extrasKeys) present.put(key)
@@ -87,7 +95,8 @@ object MagicLinkCandidate {
                 .put("phoneJidInShortcut", looksLikePhoneJid(shortcutId))
                 .put("hasShortcutId", shortcutId != null)
                 .put("hasLocusId", locusId != null)
-                .put("hasWearableDismissalId", wearableDismissalId != null),
+                .put("hasWearableDismissalId", wearableDismissalId != null)
+                .put("hasExpoPayloadUri", expoPayloadUri != null),
         )
         return o
     }

@@ -19,6 +19,7 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import space.linuxct.teleforward.data.db.entity.OutboxImageKind
+import space.linuxct.teleforward.data.link.Bluesky
 import space.linuxct.teleforward.data.link.Discord
 import space.linuxct.teleforward.data.link.Telegram
 import space.linuxct.teleforward.data.link.YouTube
@@ -309,6 +310,7 @@ class NotificationMapperImpl @Inject constructor(
             isGroupConversation = extractIsGroupConversation(sbn),
             discordMessageId = extractDiscordMessageId(sbn),
             telegramDismissalId = extractTelegramDismissalId(sbn),
+            blueskyAtUri = extractBlueskyAtUri(sbn),
         )
     }
 
@@ -543,6 +545,24 @@ class NotificationMapperImpl @Inject constructor(
                 ?.getString(Telegram.DISMISSAL_ID_KEY)
                 ?.trim()
                 ?.takeUnless { it.isBlank() }
+        } else {
+            null
+        }
+    } catch (t: Throwable) {
+        null
+    }
+
+    /**
+     * Best-effort Bluesky post AT-URI, parsed out of Expo's marshalled notification payload
+     * (`expo.notification_request`) — the only readable place Bluesky's ids appear, since it sets no
+     * shortcut, locus, Person or Wear extras. Parsed here rather than stored raw: the blob is large and
+     * only this one value matters. Null for every other package. Fully try/caught.
+     */
+    private fun extractBlueskyAtUri(sbn: StatusBarNotification): String? = try {
+        if (sbn.packageName in Bluesky.PACKAGES) {
+            Bluesky.postUriFromExpoPayload(
+                sbn.notification.extras.getByteArray(Bluesky.EXPO_REQUEST_EXTRA),
+            )
         } else {
             null
         }

@@ -51,6 +51,7 @@ class IntakeRepositoryImpl @Inject constructor(
             isGroupConversation = notification.isGroupConversation,
             discordMessageId = notification.discordMessageId,
             telegramDismissalId = notification.telegramDismissalId,
+            blueskyAtUri = notification.blueskyAtUri,
             // Store the harvested links newline-joined (URLs contain no newlines); null when none.
             extractedLinks = notification.extractedLinks
                 .takeIf { it.isNotEmpty() }

@@ -100,6 +100,7 @@ class LinkResolverImpl @Inject constructor(
                 MagicLinkKind.TELEGRAM -> reconstructTelegram(item)
                 MagicLinkKind.GITHUB -> reconstructGitHub(item)
                 MagicLinkKind.SIGNAL -> reconstructSignal(item)
+                MagicLinkKind.BLUESKY -> reconstructBluesky(item)
             }
         }
     } catch (t: Throwable) {
@@ -410,6 +411,39 @@ class LinkResolverImpl @Inject constructor(
                     outcome = MagicLinkOutcome.MATCHED,
                     service = Discord.SERVICE,
                     source = if (item.discordMessageId != null) SOURCE_DISCORD_MESSAGE else SOURCE_DISCORD_CHANNEL,
+                ),
+            )
+        }
+    }
+
+    /**
+     * Bluesky reconstruction → `bsky.app/profile/<did>/post/<rkey>` from the post AT-URI captured out of
+     * Expo's marshalled notification payload ([OutboxEntity.blueskyAtUri]). No network. Only posts are
+     * linkable: a follow names a `graph.follow` record and a chat message has no public web url, so both
+     * yield NO_MATCH. The trace carries the url — a public post, no personal data.
+     */
+    private fun reconstructBluesky(item: OutboxEntity): MagicLinkResult {
+        val url = Bluesky.postUrl(item.blueskyAtUri)
+        return if (url != null) {
+            MagicLinkResult(
+                url,
+                MagicLinkTrace(
+                    outcome = MagicLinkOutcome.MATCHED,
+                    service = Bluesky.SERVICE,
+                    url = url,
+                ),
+            )
+        } else {
+            MagicLinkResult(
+                null,
+                MagicLinkTrace(
+                    outcome = MagicLinkOutcome.NO_MATCH,
+                    service = Bluesky.SERVICE,
+                    error = if (item.blueskyAtUri == null) {
+                        "no post at-uri in the expo payload (a follow, a chat message, or no payload)"
+                    } else {
+                        "at-uri is not a post record"
+                    },
                 ),
             )
         }

@@ -38,6 +38,12 @@ enum class MagicLinkKind {
      * the same fallback WhatsApp uses for `@lid` chats.
      */
     SIGNAL,
+
+    /**
+     * Bluesky post notifications → a `bsky.app/profile/<did>/post/<rkey>` url, from the AT-URI inside
+     * Expo's marshalled notification payload. Follows and chat messages are not linkable.
+     */
+    BLUESKY,
 }
 
 /**
@@ -53,6 +59,7 @@ fun magicLinkKind(packageName: String): MagicLinkKind? = when (packageName) {
     in Telegram.PACKAGES -> MagicLinkKind.TELEGRAM
     in GitHub.PACKAGES -> MagicLinkKind.GITHUB
     in Signal.PACKAGES -> MagicLinkKind.SIGNAL
+    in Bluesky.PACKAGES -> MagicLinkKind.BLUESKY
     else -> null
 }
 

@@ -35,7 +35,7 @@ import space.linuxct.teleforward.data.db.entity.SelectionRuleEntity
         NowPlayingSessionEntity::class,
         MediaForwardEntity::class,
     ],
-    version = 15,
+    version = 16,
     exportSchema = true,
 )
 @TypeConverters(Converters::class)
@@ -335,6 +335,16 @@ abstract class TeleForwardDatabase : RoomDatabase() {
         val MIGRATION_14_15 = object : Migration(14, 15) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("ALTER TABLE `outbox` ADD COLUMN `telegramDismissalId` TEXT")
+            }
+        }
+
+        /**
+         * v15 → v16: `blueskyAtUri`, the post AT-URI parsed out of Bluesky's Expo notification payload.
+         * Additive and nullable; existing rows keep NULL and simply get no Bluesky link.
+         */
+        val MIGRATION_15_16 = object : Migration(15, 16) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `outbox` ADD COLUMN `blueskyAtUri` TEXT")
             }
         }
     }

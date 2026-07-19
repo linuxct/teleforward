@@ -101,6 +101,11 @@ data class OutboxEntity(
      */
     val telegramDismissalId: String? = null,
     /**
+     * Bluesky's post AT-URI (`at://<did>/app.bsky.feed.post/<rkey>`), parsed from the Expo payload at
+     * capture time. Null for other apps and for pre-feature rows.
+     */
+    val blueskyAtUri: String? = null,
+    /**
      * Tier-0 harvested `http`/`https` links found anywhere in the notification, stored newline-joined
      * (URLs contain no newlines); null/blank when none. Appended at send time to any that aren't
      * already inline in the body.

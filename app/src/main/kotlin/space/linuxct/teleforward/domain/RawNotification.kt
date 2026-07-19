@@ -76,4 +76,10 @@ data class RawNotification(
      * for other apps, and for OEMs that prune the wearable extras bundle.
      */
     val telegramDismissalId: String? = null,
+    /**
+     * The post AT-URI parsed out of Bluesky's Expo payload (`extras["expo.notification_request"]`).
+     * Parsed at capture time rather than stored raw, since the blob is large and only this one value
+     * matters. Null for other apps (see [space.linuxct.teleforward.data.link.Bluesky]).
+     */
+    val blueskyAtUri: String? = null,
 )
