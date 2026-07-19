@@ -6,6 +6,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import space.linuxct.teleforward.data.db.dao.NowPlayingSessionDao
 import space.linuxct.teleforward.data.db.entity.NowPlayingSessionEntity
+import space.linuxct.teleforward.data.link.LinkResolver
 import space.linuxct.teleforward.data.settings.SettingsRepository
 import space.linuxct.teleforward.domain.NotificationActionInfo
 import space.linuxct.teleforward.domain.remoteButtons
@@ -39,6 +40,7 @@ class NowPlayingController @Inject constructor(
     private val messageBuilder: MessageBuilder,
     private val settings: SettingsRepository,
     private val workManager: WorkManager,
+    private val linkResolver: LinkResolver,
 ) {
 
     private companion object {
@@ -58,6 +60,13 @@ class NowPlayingController @Inject constructor(
      * must never cause a message to be posted without its cover art.
      */
     private val renderedTracks = BoundedCache<String, String>(MAX_TRACKED_MEDIA_APPS)
+
+    /**
+     * The resolved "now playing" universal song link per package, mirrored so a play/pause edit reuses
+     * the link instead of re-hitting the network — it is looked up once per *track* change (see
+     * [mediaLink]). In-memory only: after a process restart the next track change re-resolves it.
+     */
+    private val resolvedLinks = BoundedCache<String, String>(MAX_TRACKED_MEDIA_APPS)
 
     /**
      * Would a message be posted for this track, and therefore need artwork?
@@ -94,8 +103,9 @@ class NowPlayingController @Inject constructor(
             val chatId = settings.chatId.first() ?: return
             if (!settings.nowPlayingEnabled.first()) return
 
-            val body = renderText(appLabel, title, text)
             val trackKey = trackKeyOf(title, text)
+            val link = mediaLink(packageName, trackKey, title, text)
+            val body = renderText(appLabel, title, text, link)
             val fingerprint = fingerprintOf(trackKey, notificationKey, actions)
             val now = System.currentTimeMillis()
 
@@ -283,14 +293,45 @@ class NowPlayingController @Inject constructor(
         }
     }
 
-    /** `🎵 <b>Track</b>` / artist / app — mirrors the notification without pretending to be a forward. */
-    private fun renderText(appLabel: String, title: String?, text: String?): String = buildString {
+    /**
+     * The universal song link for the current track — best-effort, and cached per package so it is
+     * resolved once per *track change* and reused across play/pause edits (the network lookup must not
+     * run on every re-post). Honours the same per-app magic-link opt-out as forwarded messages. A blank
+     * track/artist, an opted-out package, or a non-confident match all yield null → no `🔗` line.
+     *
+     * [trackKey] equal to the last rendered track means "same song, only the transport state changed",
+     * so the cached link is reused without a lookup; otherwise the (title=track, text=artist) pair is
+     * resolved via [LinkResolver.resolveMediaLink].
+     */
+    private suspend fun mediaLink(
+        packageName: String,
+        trackKey: String,
+        title: String?,
+        text: String?,
+    ): String? {
+        if (renderedTracks[packageName] == trackKey) return resolvedLinks[packageName]
+        if (packageName in settings.magicLinkDisabledPackages.first()) return null
+        val track = title?.trim().orEmpty()
+        val artist = text?.trim().orEmpty()
+        if (track.isBlank() || artist.isBlank()) return null
+        val link = linkResolver.resolveMediaLink(track, artist)
+        if (link != null) resolvedLinks[packageName] = link else resolvedLinks.remove(packageName)
+        return link
+    }
+
+    /** `🎵 <b>Track</b>` / artist / app / 🔗 link — mirrors the notification without pretending to be a forward. */
+    private fun renderText(appLabel: String, title: String?, text: String?, link: String? = null): String = buildString {
         append("🎵 <b>").append(messageBuilder.escapeHtml(appLabel)).append("</b>")
         title?.takeUnless { it.isBlank() }?.let {
             append('\n').append(messageBuilder.escapeHtml(it))
         }
         text?.takeUnless { it.isBlank() }?.let {
             append('\n').append("<i>").append(messageBuilder.escapeHtml(it)).append("</i>")
+        }
+        // The link is a song.link url whose payload is fully percent-encoded (no HTML-special chars),
+        // so it's safe as bare text and Telegram auto-links it.
+        link?.takeUnless { it.isBlank() }?.let {
+            append('\n').append("🔗 ").append(it)
         }
     }
 

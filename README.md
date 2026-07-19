@@ -21,7 +21,7 @@ only credential.
 | **Images & contact photos** | Forwards attached images; the sender's avatar / app logo is a separate opt-in. | images on, photos off |
 | **Magic links ✨** | Rebuilds the URL a notification is *about* — the YouTube video, the Apple Music song, the WhatsApp chat — and appends it as a `Link:` line, since Android won't let the app read the notification's own tap action. | on per supported app |
 | **Remote actions 🎛️** | Inline buttons under each forwarded message that act on the phone: dismiss, mark read, reply, or any button the source app itself offers. You can also just reply to the forwarded message. | **on** |
-| **Now playing 🎵** | One live message per media app with album art and transport buttons — a remote control for whatever is playing. | off |
+| **Now playing 🎵** | One live message per media app with album art, transport buttons, and a 🔗 universal song link for the current track — a remote control for whatever is playing. | off |
 | **Always listening** | Keeps a permanent connection so button presses act instantly, instead of only during a short window after each forward. | off |
 | **Diagnostics** | On-demand forensic dump for troubleshooting, redacted of message and reply text. | off |
 
@@ -208,6 +208,13 @@ link: TeleForward would rather add nothing than send you to the wrong video or c
 
 Packages covered: YouTube (`com.google.android.youtube` plus common re-packaged clients), Apple
 Music (`com.apple.android.music`), and WhatsApp (`com.whatsapp`, `com.whatsapp.w4b`).
+
+**Now playing, any player.** The *Now playing* control (see below) adds a `🔗` link to its card for
+**every** media player — Spotify, YouTube Music, Deezer, Tidal, an offline player, whatever is
+playing. Since only Apple Music exposes a keyless "song → url" lookup, the track + artist are
+resolved through the iTunes Search API and wrapped in an Odesli **song.link** universal page, which
+routes each recipient into *their own* service. Same best-effort rule: no confident catalogue match,
+no link. Honours the per-app magic-link opt-out.
 
 ### What to expect
 
@@ -426,7 +433,8 @@ notification forwards included.
 - **Magic links are best-effort** (see *Magic links* above). They're reconstructed from
   notification metadata via public feeds/APIs, so they can miss — a lagging YouTube feed, no
   Apple Music catalogue match, or an unresolvable WhatsApp number — and simply add no link when
-  they do. Only YouTube, Apple Music, and WhatsApp are supported.
+  they do. Per-app `Link:` lines cover YouTube, Apple Music, and WhatsApp; the *Now playing* card
+  adds a universal song link for any other media player.
 
 ## Project layout
 

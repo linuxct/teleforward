@@ -135,6 +135,31 @@ class LinkResolverImpl @Inject constructor(
     }
 
     /**
+     * "Now playing → universal song link" for any media player. Reuses the exact keyless Apple Music
+     * lookup ([AppleMusic.searchUrl] + [AppleMusic.parseTracks] + confident [AppleMusic.pickTrack]) and,
+     * on a match, wraps the `music.apple.com` url in an Odesli [SongLink] universal page. One cheap JSON
+     * GET; best-effort — a blank input, fetch error, or non-confident match all yield null (no link).
+     */
+    override suspend fun resolveMediaLink(track: String, artist: String): String? = try {
+        val cleanTrack = track.trim()
+        val cleanArtist = artist.trim()
+        if (cleanTrack.isBlank() || cleanArtist.isBlank()) {
+            null
+        } else {
+            val storefront = AppleMusic.storefront(Locale.getDefault().country)
+            when (val fetch = fetchBody(AppleMusic.searchUrl(cleanArtist, cleanTrack, storefront))) {
+                is BodyFetch.Error -> null
+                is BodyFetch.Success ->
+                    AppleMusic.pickTrack(AppleMusic.parseTracks(fetch.body), cleanArtist, cleanTrack)
+                        ?.let { SongLink.universalUrl(it.url) }
+            }
+        }
+    } catch (t: Throwable) {
+        // Never let a now-playing link lookup surface an error into the render path.
+        null
+    }
+
+    /**
      * Tier-1 reconstruction. A live stream / premiere already names its VIDEO id, so that short-circuits
      * to the watch url immediately. Otherwise (an ordinary upload) this requires a valid channel id AND
      * a non-blank title (the video title, which is the forwarded body), fetches the (cache-busted)

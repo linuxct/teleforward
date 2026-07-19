@@ -33,6 +33,19 @@ interface LinkResolver {
      * outbox. Never throws: a fetch/parse failure or missing match yields a null-url [MagicLinkResult].
      */
     suspend fun resolveChannelVideo(channelId: String, title: String): MagicLinkResult
+
+    /**
+     * Best-effort "now playing → universal song link" for ANY media player. Given the [track] +
+     * [artist] a media notification exposes as plain text, look the song up via the iTunes Search API
+     * (the same keyless lookup Apple Music uses) and, on a confident match, wrap the resulting
+     * `music.apple.com` url in an Odesli [SongLink] universal page — one link that routes each recipient
+     * into their own service (Spotify, Deezer, Tidal, YouTube Music, …). This is why it works for
+     * players with no keyless API of their own, and for offline players.
+     *
+     * Never throws and never emits a wrong-song link: a blank input, a fetch failure, or no confident
+     * match all yield null (the now-playing card simply carries no link line).
+     */
+    suspend fun resolveMediaLink(track: String, artist: String): String?
 }
 
 /** Why a magic-link resolution ended the way it did — one terminal outcome per [MagicLinkTrace]. */
