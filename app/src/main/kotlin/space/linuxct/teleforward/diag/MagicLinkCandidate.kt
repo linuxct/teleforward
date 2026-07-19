@@ -31,6 +31,13 @@ object MagicLinkCandidate {
     val INTERESTING_EXTRAS_KEYS: List<String> = listOf(
         "latestMessageId", // Discord: the message snowflake (readable; pairs with shortcutId==channelId)
         "chime.slot_key",  // YouTube: the channel/video id (already used by the YouTube magic link)
+        // Generic shapes worth noticing in an unknown app — each is how some app was found to leak an
+        // id, so seeing one in a dump is a strong hint the app is reconstructable.
+        "android.wearable.EXTENSIONS", // where Telegram hides chat + message id (see wearableDismissalId)
+        "expo.notification_request", // Expo's marshalled push payload (see expoPayloadUri)
+        "android.messagingStyleUser",
+        "android.conversationTitle",
+        "android.people",
     )
 
     /** True when [value] is a bare 17–19 digit snowflake (Discord/Twitter id shape). Pure. */
