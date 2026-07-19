@@ -48,6 +48,8 @@ class IntakeRepositoryImpl @Inject constructor(
             notificationKey = notification.key,
             actionsJson = NotificationActions.encode(notification.actions),
             isMedia = notification.isMedia,
+            isGroupConversation = notification.isGroupConversation,
+            discordMessageId = notification.discordMessageId,
             // Store the harvested links newline-joined (URLs contain no newlines); null when none.
             extractedLinks = notification.extractedLinks
                 .takeIf { it.isNotEmpty() }

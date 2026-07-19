@@ -89,11 +89,15 @@ class LinkResolverImpl @Inject constructor(
             item.packageName in disabledPackages ->
                 MagicLinkResult(null, MagicLinkTrace(MagicLinkOutcome.SKIPPED_DISABLED))
 
-            kind == MagicLinkKind.YOUTUBE -> reconstruct(item)
-
-            kind == MagicLinkKind.APPLE_MUSIC -> reconstructAppleMusic(item)
-
-            else -> reconstructWhatsApp(item)
+            // Exhaustive on the non-null kind ON PURPOSE: adding a MagicLinkKind without a branch here
+            // must be a COMPILE error. This used to end in `else -> reconstructWhatsApp(item)`, which
+            // would silently route a new app through WhatsApp's phone extraction.
+            else -> when (kind) {
+                MagicLinkKind.YOUTUBE -> reconstruct(item)
+                MagicLinkKind.APPLE_MUSIC -> reconstructAppleMusic(item)
+                MagicLinkKind.WHATSAPP -> reconstructWhatsApp(item)
+                MagicLinkKind.DISCORD -> reconstructDiscord(item)
+            }
         }
     } catch (t: Throwable) {
         // Absolutely never let magic-link resolution surface an error into the send path.
@@ -321,6 +325,54 @@ class LinkResolverImpl @Inject constructor(
     private fun whatsAppMissReason(item: OutboxEntity): String {
         val idKind = item.conversationId?.substringAfterLast('@', "")?.takeUnless { it.isBlank() } ?: "none"
         return "no phone (id=@$idKind, contactUri=${item.senderContactUri != null})"
+    }
+
+    /**
+     * Discord reconstruction → `discord.com/channels/@me/<channelId>[/<messageId>]`.
+     *
+     * The channel id arrives as the conversation shortcut ([OutboxEntity.conversationId] — Discord sets
+     * both the shortcut id and the locus id to the channel snowflake), and the message id as
+     * [OutboxEntity.discordMessageId] (the `latestMessageId` extra), which upgrades the link from
+     * "opens the chat" to "lands on the message".
+     *
+     * **Only 1:1 DMs are linkable.** A server channel's canonical url is `/<guild>/<channel>/<message>`
+     * and the guild id lives only inside the unreadable contentIntent, so anything not explicitly a DM
+     * yields NO_MATCH rather than an `@me` url that would resolve to nothing on the web client. No
+     * network. The trace records the outcome and which parts were available, never the ids themselves
+     * (a chat identity, and diagnostics are shareable).
+     */
+    private fun reconstructDiscord(item: OutboxEntity): MagicLinkResult {
+        if (!Discord.isDirectMessage(item.isGroupConversation)) {
+            return MagicLinkResult(
+                null,
+                MagicLinkTrace(
+                    outcome = MagicLinkOutcome.NO_MATCH,
+                    service = Discord.SERVICE,
+                    error = "not a 1:1 dm (isGroupConversation=${item.isGroupConversation}); " +
+                        "a server channel needs a guild id no readable field carries",
+                ),
+            )
+        }
+        val url = Discord.dmUrl(item.conversationId, item.discordMessageId)
+        return if (url == null) {
+            MagicLinkResult(
+                null,
+                MagicLinkTrace(
+                    outcome = MagicLinkOutcome.NO_MATCH,
+                    service = Discord.SERVICE,
+                    error = "conversation id is not a channel snowflake",
+                ),
+            )
+        } else {
+            MagicLinkResult(
+                url,
+                MagicLinkTrace(
+                    outcome = MagicLinkOutcome.MATCHED,
+                    service = Discord.SERVICE,
+                    source = if (item.discordMessageId != null) SOURCE_DISCORD_MESSAGE else SOURCE_DISCORD_CHANNEL,
+                ),
+            )
+        }
     }
 
     /**
@@ -739,5 +791,11 @@ class LinkResolverImpl @Inject constructor(
 
         /** The video id came straight from the notification's `chime.slot_key` (live / premiere). */
         const val SOURCE_SLOT_KEY = "slotKey"
+
+        /** Discord: the url was built from the conversation shortcut (channel) alone… */
+        const val SOURCE_DISCORD_CHANNEL = "shortcut"
+
+        /** …or from the shortcut plus the `latestMessageId` extra, landing on the message. */
+        const val SOURCE_DISCORD_MESSAGE = "shortcut+message"
     }
 }

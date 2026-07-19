@@ -205,9 +205,11 @@ link: TeleForward would rather add nothing than send you to the wrong video or c
 | **YouTube** | video id (live/premiere), else channel id + video title | `youtube.com/watch?v=…` | live/premieres resolve **directly**; uploads use the public feed, with a search fallback |
 | **Apple Music** | track + artist (now-playing) | `music.apple.com/…` (the song) | Apple's public iTunes Search API |
 | **WhatsApp** | the chat's phone number | `web.whatsapp.com/send/…` (opens the chat) | phone from the chat identity, or a saved contact (opt-in) |
+| **Discord** | the channel id (conversation shortcut) + the message id | `discord.com/channels/@me/…` (opens the DM, on the message) | **direct messages only** — a server channel's link needs a guild id the notification never exposes |
 
 Packages covered: YouTube (`com.google.android.youtube` plus common re-packaged clients), Apple
-Music (`com.apple.android.music`), and WhatsApp (`com.whatsapp`, `com.whatsapp.w4b`).
+Music (`com.apple.android.music`), WhatsApp (`com.whatsapp`, `com.whatsapp.w4b`), and Discord
+(`com.discord`).
 
 **Now playing, any player.** The *Now playing* control (see below) adds a `🔗` link to its card for
 **every** media player — Spotify, YouTube Music, Deezer, Tidal, an offline player, whatever is

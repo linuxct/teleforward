@@ -57,4 +57,16 @@ data class RawNotification(
      * delivery time, where the live notification may already be gone and the answer silently wrong.
      */
     val isMedia: Boolean = false,
+    /**
+     * `android.isGroupConversation` (MessagingStyle): true for a group/server conversation, false for a
+     * 1:1 chat, null when the notification carried no MessagingStyle. Discord's magic link needs it to
+     * tell a linkable DM from a server channel (whose guild id is unreadable), and null must stay
+     * distinguishable from false so an unknown conversation is never mislabelled as a DM.
+     */
+    val isGroupConversation: Boolean? = null,
+    /**
+     * Discord's `latestMessageId` extra — the newest message's snowflake, so the reconstructed chat url
+     * can deep-link to the message rather than just the channel. Null for every other app.
+     */
+    val discordMessageId: String? = null,
 )

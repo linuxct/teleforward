@@ -10,6 +10,13 @@ enum class MagicLinkKind {
 
     /** WhatsApp chat notifications → a `web.whatsapp.com/send/` url (from a phone JID/title/contact). */
     WHATSAPP,
+
+    /**
+     * Discord **direct-message** notifications → a `discord.com/channels/@me/…` url (from the
+     * conversation shortcut, which is the channel id, plus the `latestMessageId` extra). Server
+     * channels are deliberately not linkable — their url needs a guild id no readable field carries.
+     */
+    DISCORD,
 }
 
 /**
@@ -21,5 +28,6 @@ fun magicLinkKind(packageName: String): MagicLinkKind? = when (packageName) {
     in YouTube.PACKAGES -> MagicLinkKind.YOUTUBE
     in AppleMusic.PACKAGES -> MagicLinkKind.APPLE_MUSIC
     in WhatsApp.PACKAGES -> MagicLinkKind.WHATSAPP
+    in Discord.PACKAGES -> MagicLinkKind.DISCORD
     else -> null
 }

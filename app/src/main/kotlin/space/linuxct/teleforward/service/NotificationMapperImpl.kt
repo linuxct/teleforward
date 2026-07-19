@@ -19,6 +19,7 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import space.linuxct.teleforward.data.db.entity.OutboxImageKind
+import space.linuxct.teleforward.data.link.Discord
 import space.linuxct.teleforward.data.link.YouTube
 import space.linuxct.teleforward.domain.NotificationActionInfo
 import space.linuxct.teleforward.domain.RawNotification
@@ -304,6 +305,8 @@ class NotificationMapperImpl @Inject constructor(
             extractedLinks = extractLinks(sbn),
             actions = extractActions(sbn),
             isMedia = playSalt != null,
+            isGroupConversation = extractIsGroupConversation(sbn),
+            discordMessageId = extractDiscordMessageId(sbn),
         )
     }
 
@@ -486,6 +489,45 @@ class NotificationMapperImpl @Inject constructor(
         null
     }
 
+    /**
+     * `android.isGroupConversation` as a **tri-state**: true/false when the app set it, null when the
+     * notification carried no such extra. The null case matters — Discord's magic link treats "unknown"
+     * as not-a-DM so it can never emit an `@me` url for a server channel (see
+     * [space.linuxct.teleforward.data.link.Discord]). Fully try/caught.
+     */
+    private fun extractIsGroupConversation(sbn: StatusBarNotification): Boolean? = try {
+        val extras = sbn.notification.extras
+        if (extras.containsKey(IS_GROUP_CONVERSATION_EXTRA)) {
+            extras.getBoolean(IS_GROUP_CONVERSATION_EXTRA)
+        } else {
+            null
+        }
+    } catch (t: Throwable) {
+        null
+    }
+
+    /**
+     * Best-effort Discord message snowflake from the readable `latestMessageId` extra, so the chat url
+     * can deep-link the message. Accepts the value as either a long or a string (apps differ) and keeps
+     * it only when it is snowflake-shaped. Null for every other package. Fully try/caught.
+     */
+    private fun extractDiscordMessageId(sbn: StatusBarNotification): String? = try {
+        if (sbn.packageName in Discord.PACKAGES) {
+            val extras = sbn.notification.extras
+            val asLong = runCatching { extras.getLong(Discord.MESSAGE_ID_EXTRA, 0L) }.getOrDefault(0L)
+            val candidate = if (asLong > 0L) {
+                asLong.toString()
+            } else {
+                runCatching { extras.getString(Discord.MESSAGE_ID_EXTRA) }.getOrNull()?.trim()
+            }
+            candidate?.takeIf { Discord.snowflakeRegex.matches(it) }
+        } else {
+            null
+        }
+    } catch (t: Throwable) {
+        null
+    }
+
     // --- content helpers -----------------------------------------------------------------------
 
     private fun extractMessagingBody(notification: Notification): String? = try {
@@ -630,6 +672,9 @@ class NotificationMapperImpl @Inject constructor(
 
         /** `Notification.EXTRA_TEMPLATE` / `EXTRA_MEDIA_SESSION` — identify a media notification. */
         const val TEMPLATE_EXTRA = "android.template"
+
+        /** `Notification.EXTRA_IS_GROUP_CONVERSATION` — read by key so no API-level guard is needed. */
+        const val IS_GROUP_CONVERSATION_EXTRA = "android.isGroupConversation"
         const val MEDIA_SESSION_EXTRA = "android.mediaSession"
 
         const val MAX_EDGE = 2048
