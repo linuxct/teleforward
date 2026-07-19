@@ -10,6 +10,40 @@ enum class MagicLinkKind {
 
     /** WhatsApp chat notifications → a `web.whatsapp.com/send/` url (from a phone JID/title/contact). */
     WHATSAPP,
+
+    /**
+     * Discord **direct-message** notifications → a `discord.com/channels/@me/…` url (from the
+     * conversation shortcut, which is the channel id, plus the `latestMessageId` extra). Server
+     * channels are deliberately not linkable — their url needs a guild id no readable field carries.
+     */
+    DISCORD,
+
+    /**
+     * Telegram **group / supergroup** notifications → a `t.me/c/<channelId>/<messageId>` url (from the
+     * Wear `dismissalId`). Private and secret chats are not linkable — Telegram exposes no shareable
+     * per-message link for them.
+     */
+    TELEGRAM,
+
+    /**
+     * GitHub notifications → a `github.com/<owner>/<repo>/issues/<n>` url, parsed straight out of the
+     * readable `owner/repo#123` reference. No hidden id and no network: GitHub redirects `/issues/<n>`
+     * to `/pull/<n>` when the number is a pull request.
+     */
+    GITHUB,
+
+    /**
+     * Signal chat notifications → a `signal.me/#p/+<e164>` url. Signal's own ids are device-local
+     * integers, so the only recoverable identity is the sender's saved contact (opt-in READ_CONTACTS) —
+     * the same fallback WhatsApp uses for `@lid` chats.
+     */
+    SIGNAL,
+
+    /**
+     * Bluesky post notifications → a `bsky.app/profile/<did>/post/<rkey>` url, from the AT-URI inside
+     * Expo's marshalled notification payload. Follows and chat messages are not linkable.
+     */
+    BLUESKY,
 }
 
 /**
@@ -21,5 +55,37 @@ fun magicLinkKind(packageName: String): MagicLinkKind? = when (packageName) {
     in YouTube.PACKAGES -> MagicLinkKind.YOUTUBE
     in AppleMusic.PACKAGES -> MagicLinkKind.APPLE_MUSIC
     in WhatsApp.PACKAGES -> MagicLinkKind.WHATSAPP
+    in Discord.PACKAGES -> MagicLinkKind.DISCORD
+    in Telegram.PACKAGES -> MagicLinkKind.TELEGRAM
+    in GitHub.PACKAGES -> MagicLinkKind.GITHUB
+    in Signal.PACKAGES -> MagicLinkKind.SIGNAL
+    in Bluesky.PACKAGES -> MagicLinkKind.BLUESKY
     else -> null
 }
+
+/**
+ * Does this service's reconstruction depend on the opt-in READ_CONTACTS resolver?
+ *
+ * WhatsApp (`@lid` chats) and Signal (whose own ids are device-local integers) both hide the peer's
+ * phone number, so their only recovery is the sender's saved contact. Kept here beside [magicLinkKind]
+ * so the settings UI that offers the Contacts affordance can't drift from the resolvers that need it.
+ */
+fun usesContactsResolution(kind: MagicLinkKind?): Boolean =
+    kind == MagicLinkKind.WHATSAPP || kind == MagicLinkKind.SIGNAL
+
+/**
+ * Can a first attempt that found nothing be worth **retrying later**, editing the link into the message
+ * that was already sent?
+ *
+ * Only YouTube: its uploads feed and search results lag behind a just-published video by minutes, so the
+ * same query genuinely succeeds on a second attempt. Every other service either resolves from an id the
+ * notification already carries (Discord, Telegram, GitHub, Signal, Bluesky, WhatsApp) or from a single
+ * catalogue lookup (Apple Music) — for those a miss is a settled answer, and retrying would only burn
+ * battery to reach the same conclusion.
+ *
+ * Declared here beside [magicLinkKind] so the retry policy is one obvious switch rather than a package
+ * check buried in the delivery worker. Note the retry *storage* is still YouTube-shaped
+ * (`PendingLinkResolutionEntity` persists a channel id + video title): that is deliberate, since the
+ * right generic shape only becomes knowable once a second service actually needs it.
+ */
+fun supportsLinkRetry(kind: MagicLinkKind?): Boolean = kind == MagicLinkKind.YOUTUBE

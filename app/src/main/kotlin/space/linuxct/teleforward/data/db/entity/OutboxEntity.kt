@@ -82,6 +82,30 @@ data class OutboxEntity(
      */
     val isMedia: Boolean? = null,
     /**
+     * `android.isGroupConversation`: true for a group/server conversation, false for a 1:1 chat, null
+     * when unknown (no MessagingStyle, or a row queued before this was recorded). Discord's magic link
+     * links **only** a 1:1 DM — a server channel's url needs the guild id, which no readable field
+     * carries — so null must stay distinct from false (see [space.linuxct.teleforward.data.link.Discord]).
+     */
+    val isGroupConversation: Boolean? = null,
+    /**
+     * Discord's `latestMessageId` extra (a message snowflake), letting the reconstructed chat url
+     * deep-link to the message. Null for every other app and for pre-feature rows.
+     */
+    val discordMessageId: String? = null,
+    /**
+     * Telegram's Wear `dismissalId` — the one readable field naming both the peer and the message
+     * (`tgchat<id>_<msgId>` / `tguser…` / `tgenc…`). Stored raw and parsed at resolve time; only the
+     * group form is linkable (see [space.linuxct.teleforward.data.link.Telegram]). Null for other apps
+     * and for pre-feature rows.
+     */
+    val telegramDismissalId: String? = null,
+    /**
+     * Bluesky's post AT-URI (`at://<did>/app.bsky.feed.post/<rkey>`), parsed from the Expo payload at
+     * capture time. Null for other apps and for pre-feature rows.
+     */
+    val blueskyAtUri: String? = null,
+    /**
      * Tier-0 harvested `http`/`https` links found anywhere in the notification, stored newline-joined
      * (URLs contain no newlines); null/blank when none. Appended at send time to any that aren't
      * already inline in the body.

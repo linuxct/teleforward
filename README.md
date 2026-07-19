@@ -19,9 +19,9 @@ only credential.
 |---|---|---|
 | **Selective forwarding** | Choose what forwards per app, per notification channel, and per individual conversation, with INCLUDE/EXCLUDE precedence and a global pause. | — |
 | **Images & contact photos** | Forwards attached images; the sender's avatar / app logo is a separate opt-in. | images on, photos off |
-| **Magic links ✨** | Rebuilds the URL a notification is *about* — the YouTube video, the Apple Music song, the WhatsApp chat — and appends it as a `Link:` line, since Android won't let the app read the notification's own tap action. | on per supported app |
+| **Magic links ✨** | Rebuilds the URL a notification is *about* — the YouTube video, the song playing, the WhatsApp or Signal chat, the Discord DM, the Telegram message, the GitHub issue, the Bluesky post — and appends it as a `Link:` line, since Android won't let the app read the notification's own tap action. | on per supported app |
 | **Remote actions 🎛️** | Inline buttons under each forwarded message that act on the phone: dismiss, mark read, reply, or any button the source app itself offers. You can also just reply to the forwarded message. | **on** |
-| **Now playing 🎵** | One live message per media app with album art and transport buttons — a remote control for whatever is playing. | off |
+| **Now playing 🎵** | One live message per media app with album art, transport buttons, and a 🔗 universal song link for the current track — a remote control for whatever is playing. | off |
 | **Always listening** | Keeps a permanent connection so button presses act instantly, instead of only during a short window after each forward. | off |
 | **Diagnostics** | On-demand forensic dump for troubleshooting, redacted of message and reply text. | off |
 
@@ -186,7 +186,8 @@ actually sent) are governed by *include images* and are unaffected by this switc
 ## Magic links ✨
 
 Some notifications are *about* something with a shareable URL — a new YouTube video, the song
-that's playing, a WhatsApp chat — but the notification text almost never contains that URL. The
+that's playing, a chat, a Discord DM, a GitHub issue, a Bluesky post — but the notification text
+almost never contains that URL. The
 link lives inside the notification's tap action (a `PendingIntent`), which Android does **not**
 let another app read.
 
@@ -205,24 +206,68 @@ link: TeleForward would rather add nothing than send you to the wrong video or c
 | **YouTube** | video id (live/premiere), else channel id + video title | `youtube.com/watch?v=…` | live/premieres resolve **directly**; uploads use the public feed, with a search fallback |
 | **Apple Music** | track + artist (now-playing) | `music.apple.com/…` (the song) | Apple's public iTunes Search API |
 | **WhatsApp** | the chat's phone number | `web.whatsapp.com/send/…` (opens the chat) | phone from the chat identity, or a saved contact (opt-in) |
+| **Discord** | the channel id (conversation shortcut) + the message id | `discord.com/channels/@me/…` (opens the DM, on the message) | **direct messages only** — a server channel's link needs a guild id the notification never exposes |
+| **Telegram** | the chat + message id, from the Wear `dismissalId` | `t.me/c/…` (the message) | **groups/supergroups only** — Telegram publishes no shareable per-message link for private chats, and secret chats are never linked |
+| **GitHub** | the `owner/repo#123` reference in the text | `github.com/owner/repo/issues/…` | pure text parse, no lookup — GitHub redirects `/issues/` to `/pull/` for pull requests |
+| **Signal** | the sender's saved contact | `signal.me/#p/+…` (opens the chat) | saved contact only (opt-in Contacts) — Signal's own ids are device-local and carry no number |
 
 Packages covered: YouTube (`com.google.android.youtube` plus common re-packaged clients), Apple
-Music (`com.apple.android.music`), and WhatsApp (`com.whatsapp`, `com.whatsapp.w4b`).
+Music (`com.apple.android.music`), WhatsApp (`com.whatsapp`, `com.whatsapp.w4b`), Discord
+(`com.discord`), Telegram (`org.telegram.messenger` plus the common forks), GitHub
+(`com.github.android`), and Signal (`org.thoughtcrime.securesms`).
+
+A `t.me/c/` link opens only for **members** of that chat and has no web preview — it's a link back to
+your own conversation, not something a stranger can open.
+
+**A note on the two phone-number links.** WhatsApp and Signal links contain the peer's number, which
+means forwarding one writes that number into a Telegram cloud chat. That's the same disclosure for
+both, and it's the peer's number *you already have saved* — but Signal's users are the likeliest to
+care, so if that bothers you, turn magic links off for Signal (or WhatsApp) under **Apps**. Signal
+also only ever resolves a **saved contact**: it exposes no other identifier, so an unsaved sender is
+simply never linkable.
+
+**Parcel tracking, any app.** A tracking number sitting in a notification's text — an SMS, a shop
+app, an email — is turned into its carrier tracking link and forwarded alongside any real links.
+This is app-agnostic, because tracking numbers don't come from one app.
+
+Only **UPS**, **USPS** and **international post (UPU S10** — e.g. `RR287043775IN`, what Correos and
+most postal operators use**)** are detected, on purpose. A check digit is only a *10× filter*, so it
+is the number's **structure** that makes detection safe: UPS is anchored by its `1Z` prefix, USPS by
+its unusual 20/22/26-digit length, S10 by its letter/digit layout plus a real service indicator and a
+real ISO country. FedEx (a bare 12-digit number) and DHL Express (a bare 10-digit number, i.e. the
+shape of a phone number) have no such anchor — `123456789012` is a valid FedEx checksum and
+`2125551234` a valid DHL one — so they are excluded rather than risk turning an order id or a phone
+number into a wrong link.
+
+⚠️ **One caveat on S10.** UPS and USPS links go to the carrier itself. S10 has no universal official
+tracking page, so its link goes to a **third-party aggregator** (17track), which therefore sees the
+tracking number. If you'd rather that never happen, the whole feature is inert unless a notification
+actually contains a tracking number — but there is currently no separate switch for it.
+
+**Now playing, any player.** The *Now playing* control (see below) adds a `🔗` link to its card for
+**every** media player — Spotify, YouTube Music, Deezer, Tidal, an offline player, whatever is
+playing. Since only Apple Music exposes a keyless "song → url" lookup, the track + artist are
+resolved through the iTunes Search API and wrapped in an Odesli **song.link** universal page, which
+routes each recipient into *their own* service. Same best-effort rule: no confident catalogue match,
+no link. Honours the per-app magic-link opt-out.
 
 ### What to expect
 
 - **Per-app toggle, on by default.** Open a supported app under **Apps** and you'll see a
   **Reconstruct magic link** switch. Turn it off to opt that app out; the choice is remembered.
-- **It won't always land.** YouTube's feed and search results lag for busy channels; Apple Music
-  needs an exact catalogue match; WhatsApp needs a resolvable phone number. A miss simply means
-  no `Link:` line — never a broken one.
+- **It won't always land**, and each service misses differently. YouTube's feed and search lag for
+  busy channels; Apple Music needs an exact catalogue match; WhatsApp and Signal need a resolvable
+  phone number; Discord links only direct messages; Telegram only groups; GitHub skips anything that
+  mentions a discussion; Bluesky links posts but not follows or chats. A miss simply means no `Link:`
+  line — never a broken one.
 - **YouTube live streams and premieres are exact.** Those notifications identify themselves by the
   *video* id rather than the channel, so the link is built directly — instantly, with no lookup and
   no chance of picking the wrong video. Only ordinary uploads need the feed/search route.
 - **YouTube uploads self-heal.** If the first attempt (made as the message is sent) misses, the item
   still forwards immediately, and a background worker keeps re-checking for up to about an hour,
-  then **edits the already-sent Telegram message** to add the link once it resolves. (Apple Music
-  and WhatsApp resolve instantly from a single lookup, so they don't need this.)
+  then **edits the already-sent Telegram message** to add the link once it resolves. (Only YouTube
+  needs this. Apple Music resolves from a single lookup, and Discord, Telegram, GitHub, Signal and
+  Bluesky need no lookup at all — they read an id the notification already carries.)
 
 ### WhatsApp specifics
 
@@ -426,7 +471,8 @@ notification forwards included.
 - **Magic links are best-effort** (see *Magic links* above). They're reconstructed from
   notification metadata via public feeds/APIs, so they can miss — a lagging YouTube feed, no
   Apple Music catalogue match, or an unresolvable WhatsApp number — and simply add no link when
-  they do. Only YouTube, Apple Music, and WhatsApp are supported.
+  they do. Per-app `Link:` lines cover YouTube, Apple Music, and WhatsApp; the *Now playing* card
+  adds a universal song link for any other media player.
 
 ## Project layout
 

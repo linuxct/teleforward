@@ -35,7 +35,7 @@ import space.linuxct.teleforward.data.db.entity.SelectionRuleEntity
         NowPlayingSessionEntity::class,
         MediaForwardEntity::class,
     ],
-    version = 13,
+    version = 16,
     exportSchema = true,
 )
 @TypeConverters(Converters::class)
@@ -305,6 +305,46 @@ abstract class TeleForwardDatabase : RoomDatabase() {
                     "CREATE INDEX IF NOT EXISTS `index_media_forwards_sentAt` " +
                         "ON `media_forwards` (`sentAt`)",
                 )
+            }
+        }
+
+        /**
+         * v13 → v14: two readable signals the Discord magic link needs.
+         *
+         *  - `isGroupConversation` — `android.isGroupConversation`. Discord can only be linked for a 1:1
+         *    DM (a server channel's url needs the guild id, which no readable field carries), so this is
+         *    the discriminator. Nullable on purpose: NULL means "unknown", which is deliberately NOT
+         *    treated as a DM, so pre-upgrade rows can never produce a wrong-channel link.
+         *  - `discordMessageId` — Discord's `latestMessageId` extra, so the url can deep-link the message.
+         *
+         * Both additive and nullable; existing rows keep NULL and simply get no Discord link.
+         */
+        val MIGRATION_13_14 = object : Migration(13, 14) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `outbox` ADD COLUMN `isGroupConversation` INTEGER")
+                db.execSQL("ALTER TABLE `outbox` ADD COLUMN `discordMessageId` TEXT")
+            }
+        }
+
+        /**
+         * v14 → v15: `telegramDismissalId`, Telegram's Wear `dismissalId`. It is the only readable field
+         * that names both the peer and the message (`tgchat<id>_<msgId>`), which is what makes a
+         * `t.me/c/` message link reconstructable. Additive and nullable; existing rows keep NULL and
+         * simply get no Telegram link.
+         */
+        val MIGRATION_14_15 = object : Migration(14, 15) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `outbox` ADD COLUMN `telegramDismissalId` TEXT")
+            }
+        }
+
+        /**
+         * v15 → v16: `blueskyAtUri`, the post AT-URI parsed out of Bluesky's Expo notification payload.
+         * Additive and nullable; existing rows keep NULL and simply get no Bluesky link.
+         */
+        val MIGRATION_15_16 = object : Migration(15, 16) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `outbox` ADD COLUMN `blueskyAtUri` TEXT")
             }
         }
     }

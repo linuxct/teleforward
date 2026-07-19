@@ -57,4 +57,29 @@ data class RawNotification(
      * delivery time, where the live notification may already be gone and the answer silently wrong.
      */
     val isMedia: Boolean = false,
+    /**
+     * `android.isGroupConversation` (MessagingStyle): true for a group/server conversation, false for a
+     * 1:1 chat, null when the notification carried no MessagingStyle. Discord's magic link needs it to
+     * tell a linkable DM from a server channel (whose guild id is unreadable), and null must stay
+     * distinguishable from false so an unknown conversation is never mislabelled as a DM.
+     */
+    val isGroupConversation: Boolean? = null,
+    /**
+     * Discord's `latestMessageId` extra — the newest message's snowflake, so the reconstructed chat url
+     * can deep-link to the message rather than just the channel. Null for every other app.
+     */
+    val discordMessageId: String? = null,
+    /**
+     * Telegram's Wear `dismissalId` (`extras["android.wearable.EXTENSIONS"]["dismissalId"]`) — the one
+     * readable field naming both the peer and the message (`tgchat<id>_<msgId>` / `tguser…` / `tgenc…`).
+     * Stored raw and parsed at resolve time (see [space.linuxct.teleforward.data.link.Telegram]); null
+     * for other apps, and for OEMs that prune the wearable extras bundle.
+     */
+    val telegramDismissalId: String? = null,
+    /**
+     * The post AT-URI parsed out of Bluesky's Expo payload (`extras["expo.notification_request"]`).
+     * Parsed at capture time rather than stored raw, since the blob is large and only this one value
+     * matters. Null for other apps (see [space.linuxct.teleforward.data.link.Bluesky]).
+     */
+    val blueskyAtUri: String? = null,
 )

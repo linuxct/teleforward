@@ -19,8 +19,8 @@ import space.linuxct.teleforward.data.db.entity.PendingLinkResolutionEntity
 import space.linuxct.teleforward.data.link.LinkResolver
 import space.linuxct.teleforward.data.link.MagicLinkOutcome
 import space.linuxct.teleforward.data.link.MagicLinkResult
-import space.linuxct.teleforward.data.link.YouTube
 import space.linuxct.teleforward.data.link.magicLinkKind
+import space.linuxct.teleforward.data.link.supportsLinkRetry
 import space.linuxct.teleforward.data.repo.OutboxRepository
 import space.linuxct.teleforward.data.settings.SettingsRepository
 import space.linuxct.teleforward.data.telegram.MediaForwardController
@@ -297,7 +297,7 @@ class DeliveryWorker @AssistedInject constructor(
     ) {
         runCatching {
             if (resolution == null || resolution.url != null) return
-            if (row.packageName !in YouTube.PACKAGES) return
+            if (!supportsLinkRetry(magicLinkKind(row.packageName))) return
             if (row.packageName in settings.magicLinkDisabledPackages.first()) return
             val outcome = resolution.trace.outcome
             if (outcome != MagicLinkOutcome.NO_MATCH && outcome != MagicLinkOutcome.FEED_ERROR) return

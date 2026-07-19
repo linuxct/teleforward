@@ -15,6 +15,10 @@ package space.linuxct.teleforward.service
  *
  * `http`/`https` ONLY — this deliberately excludes the junk the notification dump surfaced:
  * `content://` contact URIs, `tel:`/`mailto:`, `android-app:`/app schemes, `Person@…` ids.
+ *
+ * One synthesised exception: a **parcel tracking number** found in the text is turned into its carrier
+ * tracking url (see [Parcel]). It is appended last, so a real link never loses a slot to a synthesised
+ * one, and only checksum- *and* structure-validated numbers qualify.
  */
 object LinkHarvest {
 
@@ -51,6 +55,13 @@ object LinkHarvest {
             }
         }
         for (url in spanUrls) {
+            if (addCandidate(out, url)) return out.toList()
+        }
+        // Tier-0.5: a parcel tracking NUMBER is not a url, but it names something with one. Synthesised
+        // last so genuine links always win a contested slot, and app-agnostic because tracking numbers
+        // arrive by SMS, email or any shop app rather than from one package. Checksum- AND
+        // structure-validated (see [Parcel]), so a miss adds nothing rather than a wrong link.
+        for (url in Parcel.trackingUrls(texts)) {
             if (addCandidate(out, url)) return out.toList()
         }
         return out.toList()

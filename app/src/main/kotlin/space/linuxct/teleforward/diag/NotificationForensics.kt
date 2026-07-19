@@ -15,6 +15,9 @@ import androidx.core.app.NotificationCompat
 import dagger.hilt.android.qualifiers.ApplicationContext
 import org.json.JSONArray
 import org.json.JSONObject
+import space.linuxct.teleforward.data.link.Bluesky
+import space.linuxct.teleforward.data.link.Telegram
+import space.linuxct.teleforward.data.link.magicLinkKind
 import space.linuxct.teleforward.service.resolveUserSerial
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -40,6 +43,7 @@ class NotificationForensics @Inject constructor(
         val n = sbn.notification
 
         put(root, "identity") { identity(sbn, n, env) }
+        put(root, "magicLinkCandidate") { magicLinkCandidate(sbn, n) }
         put(root, "ranking") { ranking(sbn, rankingMap, env) }
         put(root, "bubble") { bubble(n, env) }
         put(root, "people") { people(n, env) }
@@ -108,6 +112,50 @@ class NotificationForensics @Inject constructor(
         runCatching { o.put("timeoutAfter", n.timeoutAfter) }
         runCatching { o.put("groupAlertBehavior", n.groupAlertBehavior) }
         return o
+    }
+
+    // --- magic-link candidate summary (capture-session aid) ------------------------------------
+
+    /**
+     * A compact [MagicLinkCandidate] summary of the reconstruction-relevant readable fields, so a
+     * diagnostics capture session can be scanned for which apps leak a usable id (a Discord-shaped
+     * snowflake in the shortcut, a WhatsApp phone-JID in the tag, …). Purely re-groups fields already
+     * present elsewhere in the record — no pixels, no hidden APIs. Isolated in its own try/catch by the
+     * [put] wrapper, so a probe failure never disturbs the capture.
+     */
+    private fun magicLinkCandidate(sbn: StatusBarNotification, n: Notification): JSONObject {
+        val shortcutId = runCatching { n.shortcutId }.getOrNull()
+        val locusId = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            runCatching { n.locusId?.id }.getOrNull()
+        } else {
+            null
+        }
+        val style = runCatching {
+            NotificationCompat.MessagingStyle.extractMessagingStyleFromNotification(n)
+        }.getOrNull()
+        return MagicLinkCandidate.summarize(
+            packageName = sbn.packageName,
+            alreadySupported = magicLinkKind(sbn.packageName) != null,
+            tag = runCatching { sbn.tag }.getOrNull(),
+            shortcutId = shortcutId,
+            locusId = locusId,
+            group = runCatching { n.group }.getOrNull(),
+            isGroupConversation = style?.isGroupConversation,
+            conversationTitle = style?.conversationTitle?.toString(),
+            extrasKeys = runCatching { n.extras.keySet() }.getOrNull() ?: emptySet(),
+            // Keys come from Telegram (the service that taught us this hiding place) rather than local
+            // copies, so diagnostics and the production extractor can't drift apart.
+            wearableDismissalId = runCatching {
+                n.extras.getBundle(Telegram.WEARABLE_EXTENSIONS_EXTRA)
+                    ?.getString(Telegram.DISMISSAL_ID_KEY)
+            }.getOrNull(),
+            // Expo marshals the whole push payload into a byte array, so ids hidden there are invisible
+            // in the raw extras dump. Decoded generically (not just for Bluesky) so a session surfaces
+            // the same pattern in any Expo-built app.
+            expoPayloadUri = runCatching {
+                Bluesky.postUriFromExpoPayload(n.extras.getByteArray(Bluesky.EXPO_REQUEST_EXTRA))
+            }.getOrNull(),
+        )
     }
 
     private fun decodeFlags(flags: Int): JSONObject {

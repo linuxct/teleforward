@@ -83,6 +83,10 @@ class SettingsRepositoryImpl @Inject constructor(
         it[SettingsKeys.NOW_PLAYING_ENABLED] ?: SettingsKeys.Defaults.NOW_PLAYING_ENABLED
     }
 
+    override val nowPlayingSongLink: Flow<Boolean> = dataStore.data.map {
+        it[SettingsKeys.NOW_PLAYING_SONG_LINK] ?: SettingsKeys.Defaults.NOW_PLAYING_SONG_LINK
+    }
+
     override suspend fun setChatId(chatId: Long?) {
         dataStore.edit { prefs ->
             if (chatId == null) prefs.remove(SettingsKeys.CHAT_ID) else prefs[SettingsKeys.CHAT_ID] = chatId
@@ -179,6 +183,10 @@ class SettingsRepositoryImpl @Inject constructor(
 
     override suspend fun setNowPlayingEnabled(enabled: Boolean) {
         dataStore.edit { prefs -> prefs[SettingsKeys.NOW_PLAYING_ENABLED] = enabled }
+    }
+
+    override suspend fun setNowPlayingSongLink(enabled: Boolean) {
+        dataStore.edit { prefs -> prefs[SettingsKeys.NOW_PLAYING_SONG_LINK] = enabled }
     }
 
     override suspend fun setIncludeAvatars(enabled: Boolean) {

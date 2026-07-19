@@ -4,6 +4,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import space.linuxct.teleforward.data.link.WhatsApp
 
 class DeepLinkHeuristicsTest {
 
@@ -51,7 +52,13 @@ class DeepLinkHeuristicsTest {
     @Test
     fun whatsappOneToOneJid() {
         val r = DeepLinkHeuristics.normalize("15551234567@s.whatsapp.net")
-        assertEquals("https://wa.me/15551234567", r.normalized)
+        // Must match what delivery would ACTUALLY forward — diagnostics used to emit `wa.me/…` while
+        // production emitted the `web.whatsapp.com/send/` form, so a dump advertised a different link.
+        assertEquals(WhatsApp.chatUrl("15551234567"), r.normalized)
+        assertEquals(
+            "https://web.whatsapp.com/send/?phone=15551234567&text&type=phone_number&app_absent=0",
+            r.normalized,
+        )
         assertEquals("whatsapp", r.heuristic)
         assertEquals("com.whatsapp", r.appGuess)
     }

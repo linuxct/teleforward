@@ -52,6 +52,13 @@ object SettingsKeys {
     // place as the track changes, carrying the app's transport buttons. Off by default.
     val NOW_PLAYING_ENABLED = booleanPreferencesKey("now_playing_enabled")
 
+    /**
+     * Whether the now-playing card carries a `🔗` universal song link. Global rather than per-app,
+     * because most players (Spotify, YouTube Music, Deezer, …) have no `MagicLinkKind` and therefore no
+     * per-app magic-link toggle to hang it off.
+     */
+    val NOW_PLAYING_SONG_LINK = booleanPreferencesKey("now_playing_song_link")
+
     object Defaults {
         const val FORWARDING_ENABLED = true
         const val ONBOARDING_COMPLETE = false
@@ -85,5 +92,8 @@ object SettingsKeys {
          * asked for it, so it stays off until switched on.
          */
         const val NOW_PLAYING_ENABLED = false
+
+        /** On: the now-playing card is already opt-in, so its link doesn't need a second opt-in. */
+        const val NOW_PLAYING_SONG_LINK = true
     }
 }

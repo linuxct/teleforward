@@ -89,11 +89,19 @@ class LinkResolverImpl @Inject constructor(
             item.packageName in disabledPackages ->
                 MagicLinkResult(null, MagicLinkTrace(MagicLinkOutcome.SKIPPED_DISABLED))
 
-            kind == MagicLinkKind.YOUTUBE -> reconstruct(item)
-
-            kind == MagicLinkKind.APPLE_MUSIC -> reconstructAppleMusic(item)
-
-            else -> reconstructWhatsApp(item)
+            // Exhaustive on the non-null kind ON PURPOSE: adding a MagicLinkKind without a branch here
+            // must be a COMPILE error. This used to end in `else -> reconstructWhatsApp(item)`, which
+            // would silently route a new app through WhatsApp's phone extraction.
+            else -> when (kind) {
+                MagicLinkKind.YOUTUBE -> reconstruct(item)
+                MagicLinkKind.APPLE_MUSIC -> reconstructAppleMusic(item)
+                MagicLinkKind.WHATSAPP -> reconstructWhatsApp(item)
+                MagicLinkKind.DISCORD -> reconstructDiscord(item)
+                MagicLinkKind.TELEGRAM -> reconstructTelegram(item)
+                MagicLinkKind.GITHUB -> reconstructGitHub(item)
+                MagicLinkKind.SIGNAL -> reconstructSignal(item)
+                MagicLinkKind.BLUESKY -> reconstructBluesky(item)
+            }
         }
     } catch (t: Throwable) {
         // Absolutely never let magic-link resolution surface an error into the send path.
@@ -132,6 +140,31 @@ class LinkResolverImpl @Inject constructor(
                 error = t.message ?: t.javaClass.simpleName,
             ),
         )
+    }
+
+    /**
+     * "Now playing → universal song link" for any media player. Reuses the exact keyless Apple Music
+     * lookup ([AppleMusic.searchUrl] + [AppleMusic.parseTracks] + confident [AppleMusic.pickTrack]) and,
+     * on a match, wraps the `music.apple.com` url in an Odesli [SongLink] universal page. One cheap JSON
+     * GET; best-effort — a blank input, fetch error, or non-confident match all yield null (no link).
+     */
+    override suspend fun resolveMediaLink(track: String, artist: String): String? = try {
+        val cleanTrack = track.trim()
+        val cleanArtist = artist.trim()
+        if (cleanTrack.isBlank() || cleanArtist.isBlank()) {
+            null
+        } else {
+            val storefront = AppleMusic.storefront(Locale.getDefault().country)
+            when (val fetch = fetchBody(AppleMusic.searchUrl(cleanArtist, cleanTrack, storefront))) {
+                is BodyFetch.Error -> null
+                is BodyFetch.Success ->
+                    AppleMusic.pickTrack(AppleMusic.parseTracks(fetch.body), cleanArtist, cleanTrack)
+                        ?.let { SongLink.universalUrl(it.url) }
+            }
+        }
+    } catch (t: Throwable) {
+        // Never let a now-playing link lookup surface an error into the render path.
+        null
     }
 
     /**
@@ -292,10 +325,199 @@ class LinkResolverImpl @Inject constructor(
         }
     }
 
+    /**
+     * Signal reconstruction → a `signal.me/#p/+<e164>` url.
+     *
+     * Signal exposes no recoverable id of its own — its shortcut/locus/Person.key are all a device-local
+     * `RecipientId` row integer — so the ONLY path is the sender's identity: an unsaved contact's
+     * phone-shaped title (permission-free), else the saved contact behind [OutboxEntity.senderContactUri]
+     * via the opt-in READ_CONTACTS resolver. No network, and the trace omits the number/url (PII).
+     */
+    private fun reconstructSignal(item: OutboxEntity): MagicLinkResult {
+        // The saved contact is the ONLY door. Unlike WhatsApp there is deliberately no phone-shaped
+        // title fallback: Signal's display-name chain puts the profile name ABOVE the E.164 fallback,
+        // and every account sets a profile name at registration, so the number never surfaces in the
+        // title (and when it theoretically would, it is pretty-printed, not E.164).
+        val uri = item.senderContactUri
+        val phone = if (uri != null) contactPhoneResolver.resolve(uri) else null
+        return if (phone != null) {
+            MagicLinkResult(
+                Signal.chatUrl(phone),
+                MagicLinkTrace(
+                    outcome = MagicLinkOutcome.MATCHED,
+                    service = Signal.SERVICE,
+                    source = Signal.SOURCE_CONTACTS,
+                ),
+            )
+        } else {
+            MagicLinkResult(
+                null,
+                MagicLinkTrace(
+                    outcome = MagicLinkOutcome.NO_MATCH,
+                    service = Signal.SERVICE,
+                    error = "no phone (contactUri=${item.senderContactUri != null}); " +
+                        "signal ids are device-local RecipientIds and carry no number",
+                ),
+            )
+        }
+    }
+
     /** PII-free reason a WhatsApp reconstruction found no phone (records the id KIND, never its value). */
     private fun whatsAppMissReason(item: OutboxEntity): String {
         val idKind = item.conversationId?.substringAfterLast('@', "")?.takeUnless { it.isBlank() } ?: "none"
         return "no phone (id=@$idKind, contactUri=${item.senderContactUri != null})"
+    }
+
+    /**
+     * Discord reconstruction → `discord.com/channels/@me/<channelId>[/<messageId>]`.
+     *
+     * The channel id arrives as the conversation shortcut ([OutboxEntity.conversationId] — Discord sets
+     * both the shortcut id and the locus id to the channel snowflake), and the message id as
+     * [OutboxEntity.discordMessageId] (the `latestMessageId` extra), which upgrades the link from
+     * "opens the chat" to "lands on the message".
+     *
+     * **Only 1:1 DMs are linkable.** A server channel's canonical url is `/<guild>/<channel>/<message>`
+     * and the guild id lives only inside the unreadable contentIntent, so anything not explicitly a DM
+     * yields NO_MATCH rather than an `@me` url that would resolve to nothing on the web client. No
+     * network. The trace records the outcome and which parts were available, never the ids themselves
+     * (a chat identity, and diagnostics are shareable).
+     */
+    private fun reconstructDiscord(item: OutboxEntity): MagicLinkResult {
+        if (!Discord.isDirectMessage(item.isGroupConversation)) {
+            return MagicLinkResult(
+                null,
+                MagicLinkTrace(
+                    outcome = MagicLinkOutcome.NO_MATCH,
+                    service = Discord.SERVICE,
+                    error = "not a 1:1 dm (isGroupConversation=${item.isGroupConversation}); " +
+                        "a server channel needs a guild id no readable field carries",
+                ),
+            )
+        }
+        val url = Discord.dmUrl(item.conversationId, item.discordMessageId)
+        return if (url == null) {
+            MagicLinkResult(
+                null,
+                MagicLinkTrace(
+                    outcome = MagicLinkOutcome.NO_MATCH,
+                    service = Discord.SERVICE,
+                    error = "conversation id is not a channel snowflake",
+                ),
+            )
+        } else {
+            MagicLinkResult(
+                url,
+                MagicLinkTrace(
+                    outcome = MagicLinkOutcome.MATCHED,
+                    service = Discord.SERVICE,
+                    source = if (item.discordMessageId != null) SOURCE_DISCORD_MESSAGE else SOURCE_DISCORD_CHANNEL,
+                ),
+            )
+        }
+    }
+
+    /**
+     * Bluesky reconstruction → `bsky.app/profile/<did>/post/<rkey>` from the post AT-URI captured out of
+     * Expo's marshalled notification payload ([OutboxEntity.blueskyAtUri]). No network. Only posts are
+     * linkable: a follow names a `graph.follow` record and a chat message has no public web url, so both
+     * yield NO_MATCH. The trace carries the url — a public post, no personal data.
+     */
+    private fun reconstructBluesky(item: OutboxEntity): MagicLinkResult {
+        val url = Bluesky.postUrl(item.blueskyAtUri)
+        return if (url != null) {
+            MagicLinkResult(
+                url,
+                MagicLinkTrace(
+                    outcome = MagicLinkOutcome.MATCHED,
+                    service = Bluesky.SERVICE,
+                    url = url,
+                ),
+            )
+        } else {
+            MagicLinkResult(
+                null,
+                MagicLinkTrace(
+                    outcome = MagicLinkOutcome.NO_MATCH,
+                    service = Bluesky.SERVICE,
+                    error = if (item.blueskyAtUri == null) {
+                        "no post at-uri in the expo payload (a follow, a chat message, or no payload)"
+                    } else {
+                        "at-uri is not a post record"
+                    },
+                ),
+            )
+        }
+    }
+
+    /**
+     * GitHub reconstruction → `github.com/<owner>/<repo>/issues/<n>`, parsed from the readable
+     * `owner/repo#123` reference in the notification's title + body. The only service needing neither a
+     * hidden id nor a network call: GitHub redirects `/issues/<n>` to `/pull/<n>` for pull requests, so
+     * one form serves both. Text mentioning a *discussion* is refused (separate numbering namespace —
+     * see [GitHub]). The trace carries the resolved url; it contains no personal data.
+     */
+    private fun reconstructGitHub(item: OutboxEntity): MagicLinkResult {
+        val text = listOfNotNull(item.title, item.body).joinToString("\n")
+        val url = GitHub.issueUrl(text)
+        return if (url != null) {
+            MagicLinkResult(
+                url,
+                MagicLinkTrace(
+                    outcome = MagicLinkOutcome.MATCHED,
+                    service = GitHub.SERVICE,
+                    url = url,
+                ),
+            )
+        } else {
+            MagicLinkResult(
+                null,
+                MagicLinkTrace(
+                    outcome = MagicLinkOutcome.NO_MATCH,
+                    service = GitHub.SERVICE,
+                    error = "no owner/repo#number reference in the notification text",
+                ),
+            )
+        }
+    }
+
+    /**
+     * Telegram reconstruction → `t.me/c/<channelId>/<messageId>` from the Wear `dismissalId`
+     * ([OutboxEntity.telegramDismissalId]), the one readable field that names both the peer and the
+     * message. Only the `tgchat…` (group / supergroup) form is linkable: Telegram exposes no shareable
+     * per-message link for a private chat, and a secret chat must never be linked — both yield NO_MATCH.
+     *
+     * No network. The trace records the peer KIND (`chat` / `user` / `encrypted` / `none`) so a miss is
+     * explainable, never the id itself (a chat identity; diagnostics are shareable).
+     */
+    private fun reconstructTelegram(item: OutboxEntity): MagicLinkResult {
+        val dismissalId = item.telegramDismissalId
+        val kind = Telegram.peerKind(dismissalId)
+        val url = Telegram.messageUrl(dismissalId)
+        return if (url != null) {
+            MagicLinkResult(
+                url,
+                MagicLinkTrace(
+                    outcome = MagicLinkOutcome.MATCHED,
+                    service = Telegram.SERVICE,
+                    source = kind,
+                ),
+            )
+        } else {
+            MagicLinkResult(
+                null,
+                MagicLinkTrace(
+                    outcome = MagicLinkOutcome.NO_MATCH,
+                    service = Telegram.SERVICE,
+                    source = kind,
+                    error = when (kind) {
+                        "user" -> "private chat: telegram has no shareable per-message link"
+                        "encrypted" -> "secret chat: never linked"
+                        "none" -> "no wearable dismissalId (absent, or pruned by the OEM)"
+                        else -> "dismissalId not in the expected tgchat<id>_<msgId> shape"
+                    },
+                ),
+            )
+        }
     }
 
     /**
@@ -714,5 +936,11 @@ class LinkResolverImpl @Inject constructor(
 
         /** The video id came straight from the notification's `chime.slot_key` (live / premiere). */
         const val SOURCE_SLOT_KEY = "slotKey"
+
+        /** Discord: the url was built from the conversation shortcut (channel) alone… */
+        const val SOURCE_DISCORD_CHANNEL = "shortcut"
+
+        /** …or from the shortcut plus the `latestMessageId` extra, landing on the message. */
+        const val SOURCE_DISCORD_MESSAGE = "shortcut+message"
     }
 }
