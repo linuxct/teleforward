@@ -225,6 +225,17 @@ care, so if that bothers you, turn magic links off for Signal (or WhatsApp) unde
 also only ever resolves a **saved contact**: it exposes no other identifier, so an unsaved sender is
 simply never linkable.
 
+**Parcel tracking, any app.** A tracking number sitting in a notification's text — an SMS, a shop
+app, an email — is turned into its carrier tracking link and forwarded alongside any real links.
+This is app-agnostic, because tracking numbers don't come from one app.
+
+Only **UPS** and **USPS** are detected, on purpose. A check digit is only a *10× filter*, so it is
+the number's **structure** that makes detection safe: UPS is anchored by its `1Z` prefix, USPS by its
+unusual 20/22/26-digit length. FedEx (a bare 12-digit number) and DHL Express (a bare 10-digit
+number, i.e. the shape of a phone number) have no such anchor — `123456789012` is a valid FedEx
+checksum and `2125551234` a valid DHL one — so they are excluded rather than risk turning an order
+id or a phone number into a wrong link.
+
 **Now playing, any player.** The *Now playing* control (see below) adds a `🔗` link to its card for
 **every** media player — Spotify, YouTube Music, Deezer, Tidal, an offline player, whatever is
 playing. Since only Apple Music exposes a keyless "song → url" lookup, the track + artist are
