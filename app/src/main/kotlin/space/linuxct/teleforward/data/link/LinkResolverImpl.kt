@@ -98,6 +98,7 @@ class LinkResolverImpl @Inject constructor(
                 MagicLinkKind.WHATSAPP -> reconstructWhatsApp(item)
                 MagicLinkKind.DISCORD -> reconstructDiscord(item)
                 MagicLinkKind.TELEGRAM -> reconstructTelegram(item)
+                MagicLinkKind.GITHUB -> reconstructGitHub(item)
             }
         }
     } catch (t: Throwable) {
@@ -371,6 +372,37 @@ class LinkResolverImpl @Inject constructor(
                     outcome = MagicLinkOutcome.MATCHED,
                     service = Discord.SERVICE,
                     source = if (item.discordMessageId != null) SOURCE_DISCORD_MESSAGE else SOURCE_DISCORD_CHANNEL,
+                ),
+            )
+        }
+    }
+
+    /**
+     * GitHub reconstruction → `github.com/<owner>/<repo>/issues/<n>`, parsed from the readable
+     * `owner/repo#123` reference in the notification's title + body. The only service needing neither a
+     * hidden id nor a network call: GitHub redirects `/issues/<n>` to `/pull/<n>` for pull requests, so
+     * one form serves both. Text mentioning a *discussion* is refused (separate numbering namespace —
+     * see [GitHub]). The trace carries the resolved url; it contains no personal data.
+     */
+    private fun reconstructGitHub(item: OutboxEntity): MagicLinkResult {
+        val text = listOfNotNull(item.title, item.body).joinToString("\n")
+        val url = GitHub.issueUrl(text)
+        return if (url != null) {
+            MagicLinkResult(
+                url,
+                MagicLinkTrace(
+                    outcome = MagicLinkOutcome.MATCHED,
+                    service = GitHub.SERVICE,
+                    url = url,
+                ),
+            )
+        } else {
+            MagicLinkResult(
+                null,
+                MagicLinkTrace(
+                    outcome = MagicLinkOutcome.NO_MATCH,
+                    service = GitHub.SERVICE,
+                    error = "no owner/repo#number reference in the notification text",
                 ),
             )
         }

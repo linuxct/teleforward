@@ -24,6 +24,13 @@ enum class MagicLinkKind {
      * per-message link for them.
      */
     TELEGRAM,
+
+    /**
+     * GitHub notifications → a `github.com/<owner>/<repo>/issues/<n>` url, parsed straight out of the
+     * readable `owner/repo#123` reference. No hidden id and no network: GitHub redirects `/issues/<n>`
+     * to `/pull/<n>` when the number is a pull request.
+     */
+    GITHUB,
 }
 
 /**
@@ -37,5 +44,6 @@ fun magicLinkKind(packageName: String): MagicLinkKind? = when (packageName) {
     in WhatsApp.PACKAGES -> MagicLinkKind.WHATSAPP
     in Discord.PACKAGES -> MagicLinkKind.DISCORD
     in Telegram.PACKAGES -> MagicLinkKind.TELEGRAM
+    in GitHub.PACKAGES -> MagicLinkKind.GITHUB
     else -> null
 }

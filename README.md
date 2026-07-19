@@ -207,10 +207,12 @@ link: TeleForward would rather add nothing than send you to the wrong video or c
 | **WhatsApp** | the chat's phone number | `web.whatsapp.com/send/…` (opens the chat) | phone from the chat identity, or a saved contact (opt-in) |
 | **Discord** | the channel id (conversation shortcut) + the message id | `discord.com/channels/@me/…` (opens the DM, on the message) | **direct messages only** — a server channel's link needs a guild id the notification never exposes |
 | **Telegram** | the chat + message id, from the Wear `dismissalId` | `t.me/c/…` (the message) | **groups/supergroups only** — Telegram publishes no shareable per-message link for private chats, and secret chats are never linked |
+| **GitHub** | the `owner/repo#123` reference in the text | `github.com/owner/repo/issues/…` | pure text parse, no lookup — GitHub redirects `/issues/` to `/pull/` for pull requests |
 
 Packages covered: YouTube (`com.google.android.youtube` plus common re-packaged clients), Apple
 Music (`com.apple.android.music`), WhatsApp (`com.whatsapp`, `com.whatsapp.w4b`), Discord
-(`com.discord`), and Telegram (`org.telegram.messenger` plus the common forks).
+(`com.discord`), Telegram (`org.telegram.messenger` plus the common forks), and GitHub
+(`com.github.android`).
 
 A `t.me/c/` link opens only for **members** of that chat and has no web preview — it's a link back to
 your own conversation, not something a stranger can open.
