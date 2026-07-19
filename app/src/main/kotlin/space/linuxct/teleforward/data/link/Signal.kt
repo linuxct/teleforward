@@ -34,11 +34,19 @@ object Signal {
 
     /** Source that produced the phone, recorded in the trace (never the number itself — that's PII). */
     const val SOURCE_CONTACTS = "contacts"
-    const val SOURCE_TITLE = "title"
 
     /**
      * Signal's click-to-chat url for [e164Digits] (international digits, no `+` — this adds it).
-     * The `#p/` fragment is resolved client-side by signal.me / the app.
+     *
+     * The shape is dictated by Signal's own parser, which is strict
+     * (`^(https|sgnl)://signal\.me/#p/(\+[0-9]+)$` in `SignalMeUtil`), so all of the following matter:
+     * scheme is `https` (not `sgnl://`, which Telegram won't autolink and which can't fall back to a
+     * web page), the `+` is **literal and never percent-encoded** (`%2B` silently no-ops), digits only
+     * after it, and nothing trailing — no slash, no query string.
+     *
+     * `signal.me` is a verified Android App Link for the Signal package, so on a phone this opens the
+     * chat directly; in a desktop browser it degrades to Signal's own "Contact on Signal" page. The
+     * number lives in the URL *fragment*, so it is never sent to Signal's servers.
      */
     fun chatUrl(e164Digits: String): String = "https://signal.me/#p/+$e164Digits"
 }

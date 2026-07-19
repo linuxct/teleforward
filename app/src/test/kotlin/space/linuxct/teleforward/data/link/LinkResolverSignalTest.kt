@@ -3,6 +3,7 @@ package space.linuxct.teleforward.data.link
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import space.linuxct.teleforward.data.db.entity.OutboxEntity
 import space.linuxct.teleforward.data.db.entity.OutboxStatus
@@ -55,14 +56,25 @@ class LinkResolverSignalTest {
     }
 
     @Test
-    fun phoneShapedTitleResolvesWithoutContactsPermission() = runTest {
-        // An unsaved contact renders as its raw international number — no READ_CONTACTS needed.
+    fun aPhoneShapedTitleIsDeliberatelyNotAFallback() = runTest {
+        // Unlike WhatsApp, Signal has no title fallback: its display-name chain puts the profile name
+        // above the E.164 fallback, and every account sets one at registration. Without a contact uri
+        // there is nothing to build, even if the title happens to look like a number.
         val result = LinkResolverImpl().resolve(
             signalItem(title = "+34 600 11 22 33"),
             disabledPackages = emptySet(),
         )
-        assertEquals("https://signal.me/#p/+34600112233", result.url)
-        assertEquals(Signal.SOURCE_TITLE, result.trace.source)
+        assertNull(result.url)
+        assertEquals(MagicLinkOutcome.NO_MATCH, result.trace.outcome)
+    }
+
+    @Test
+    fun theBuiltUrlSatisfiesSignalsOwnStrictParser() {
+        // Signal's SignalMeUtil regex, verbatim. A percent-encoded `+`, a trailing slash or a query
+        // string all silently no-op in the app, so pin the exact shape.
+        val signalParser = Regex("""^(https|sgnl)://signal\.me/#p/(\+[0-9]+)$""")
+        assertTrue(signalParser.matches(Signal.chatUrl("34600112233")))
+        assertTrue(signalParser.matches(Signal.chatUrl("15555555555")))
     }
 
     @Test

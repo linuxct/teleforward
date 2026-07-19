@@ -208,14 +208,22 @@ link: TeleForward would rather add nothing than send you to the wrong video or c
 | **Discord** | the channel id (conversation shortcut) + the message id | `discord.com/channels/@me/…` (opens the DM, on the message) | **direct messages only** — a server channel's link needs a guild id the notification never exposes |
 | **Telegram** | the chat + message id, from the Wear `dismissalId` | `t.me/c/…` (the message) | **groups/supergroups only** — Telegram publishes no shareable per-message link for private chats, and secret chats are never linked |
 | **GitHub** | the `owner/repo#123` reference in the text | `github.com/owner/repo/issues/…` | pure text parse, no lookup — GitHub redirects `/issues/` to `/pull/` for pull requests |
+| **Signal** | the sender's saved contact | `signal.me/#p/+…` (opens the chat) | saved contact only (opt-in Contacts) — Signal's own ids are device-local and carry no number |
 
 Packages covered: YouTube (`com.google.android.youtube` plus common re-packaged clients), Apple
 Music (`com.apple.android.music`), WhatsApp (`com.whatsapp`, `com.whatsapp.w4b`), Discord
-(`com.discord`), Telegram (`org.telegram.messenger` plus the common forks), and GitHub
-(`com.github.android`).
+(`com.discord`), Telegram (`org.telegram.messenger` plus the common forks), GitHub
+(`com.github.android`), and Signal (`org.thoughtcrime.securesms`).
 
 A `t.me/c/` link opens only for **members** of that chat and has no web preview — it's a link back to
 your own conversation, not something a stranger can open.
+
+**A note on the two phone-number links.** WhatsApp and Signal links contain the peer's number, which
+means forwarding one writes that number into a Telegram cloud chat. That's the same disclosure for
+both, and it's the peer's number *you already have saved* — but Signal's users are the likeliest to
+care, so if that bothers you, turn magic links off for Signal (or WhatsApp) under **Apps**. Signal
+also only ever resolves a **saved contact**: it exposes no other identifier, so an unsaved sender is
+simply never linkable.
 
 **Now playing, any player.** The *Now playing* control (see below) adds a `🔗` link to its card for
 **every** media player — Spotify, YouTube Music, Deezer, Tidal, an offline player, whatever is

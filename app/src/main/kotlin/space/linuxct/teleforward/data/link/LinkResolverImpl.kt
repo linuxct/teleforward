@@ -333,22 +333,19 @@ class LinkResolverImpl @Inject constructor(
      * via the opt-in READ_CONTACTS resolver. No network, and the trace omits the number/url (PII).
      */
     private fun reconstructSignal(item: OutboxEntity): MagicLinkResult {
-        val titlePhone = WhatsApp.phoneFromTitle(item.title)
-        val (phone, source) = when {
-            titlePhone != null -> titlePhone to Signal.SOURCE_TITLE
-            else -> {
-                val uri = item.senderContactUri
-                val contactPhone = if (uri != null) contactPhoneResolver.resolve(uri) else null
-                if (contactPhone != null) contactPhone to Signal.SOURCE_CONTACTS else null to null
-            }
-        }
+        // The saved contact is the ONLY door. Unlike WhatsApp there is deliberately no phone-shaped
+        // title fallback: Signal's display-name chain puts the profile name ABOVE the E.164 fallback,
+        // and every account sets a profile name at registration, so the number never surfaces in the
+        // title (and when it theoretically would, it is pretty-printed, not E.164).
+        val uri = item.senderContactUri
+        val phone = if (uri != null) contactPhoneResolver.resolve(uri) else null
         return if (phone != null) {
             MagicLinkResult(
                 Signal.chatUrl(phone),
                 MagicLinkTrace(
                     outcome = MagicLinkOutcome.MATCHED,
                     service = Signal.SERVICE,
-                    source = source,
+                    source = Signal.SOURCE_CONTACTS,
                 ),
             )
         } else {
