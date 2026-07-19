@@ -96,8 +96,12 @@ class TelegramPoller @Inject constructor(
     }
 
     companion object {
-        /** Long-poll window. Comfortably below the 60s OkHttp read timeout. */
-        const val POLL_TIMEOUT_SECONDS = 25
+        /**
+         * Long-poll window. Telegram holds the request open and pushes a press down it the instant
+         * it happens, so a LONGER window means both lower latency and fewer wake-ups — the connection
+         * is idle while held. Comfortably below the 60s OkHttp read timeout.
+         */
+        const val POLL_TIMEOUT_SECONDS = 45
 
         /** Telegram's "another getUpdates is already running" status. */
         private const val HTTP_CONFLICT = 409

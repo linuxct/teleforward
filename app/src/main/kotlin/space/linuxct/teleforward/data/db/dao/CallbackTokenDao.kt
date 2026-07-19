@@ -49,4 +49,16 @@ interface CallbackTokenDao {
 
     @Query("SELECT COUNT(*) FROM callback_tokens")
     suspend fun count(): Int
+
+    /**
+     * Every message still offering buttons for [notificationKey].
+     *
+     * Used to retire those buttons the moment the notification leaves the phone: outbound calls always
+     * work, so the chat can be kept honest without anything listening for a press.
+     */
+    @Query(
+        "SELECT * FROM callback_tokens WHERE notificationKey = :notificationKey " +
+            "AND messageId IS NOT NULL",
+    )
+    suspend fun findByNotificationKey(notificationKey: String): List<CallbackTokenEntity>
 }

@@ -52,5 +52,6 @@
     <!-- Entrecomillado para conservar el espacio final: Android recorta los espacios sin comillas. -->
     <string name="tg_link_prefix">"Enlace: "</string>
     <string name="tg_playback_ended">⏹ Reproducción finalizada</string>
+    <string name="tg_dismissed_on_phone">✓ Descartada en el móvil</string>
     <string name="tg_no_recipient_paired">no hay destinatario vinculado</string>
 </resources>

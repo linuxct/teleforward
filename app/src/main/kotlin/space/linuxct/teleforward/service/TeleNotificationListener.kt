@@ -16,6 +16,7 @@ import space.linuxct.teleforward.data.repo.SeenChannelRepository
 import space.linuxct.teleforward.data.repo.SeenConversationRepository
 import space.linuxct.teleforward.data.settings.SettingsKeys
 import space.linuxct.teleforward.data.settings.SettingsRepository
+import space.linuxct.teleforward.data.telegram.DismissedNotificationSync
 import space.linuxct.teleforward.data.telegram.NowPlayingController
 import space.linuxct.teleforward.diag.DiagStore
 import space.linuxct.teleforward.diag.NotificationForensics
@@ -53,6 +54,8 @@ class TeleNotificationListener : NotificationListenerService() {
     @Inject lateinit var actionGateway: NotificationActionGateway
     @Inject lateinit var nowPlayingController: NowPlayingController
     @Inject lateinit var mediaDebouncer: MediaDispatchDebouncer
+    @Inject lateinit var dismissedNotificationSync: DismissedNotificationSync
+    @Inject lateinit var screenOnPoller: ScreenOnPoller
 
     /** Owned scope for all heavy work; cancelled in [onDestroy]. */
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -294,18 +297,33 @@ class TeleNotificationListener : NotificationListenerService() {
      * Playback ended (or the media notification was cleared): retire that app's now-playing control so
      * a dead message can't sit in the chat still offering transport buttons.
      */
-    override fun onNotificationRemoved(sbn: StatusBarNotification?) {
-        super.onNotificationRemoved(sbn)
+    override fun onNotificationRemoved(sbn: StatusBarNotification?, rankingMap: RankingMap?, reason: Int) {
+        super.onNotificationRemoved(sbn, rankingMap, reason)
         val notification = sbn ?: return
-        if (!listenerSettings.nowPlayingEnabled) return
         val isMedia = isMediaNotification(
             category = notification.notification.category,
             template = notification.notification.extras.getString(TEMPLATE_EXTRA),
             hasMediaSession = notification.notification.extras.containsKey(MEDIA_SESSION_EXTRA),
         )
-        if (!isMedia) return
         val packageName = notification.packageName
-        scope.launch { runCatching { nowPlayingController.clear(packageName) } }
+
+        if (isMedia) {
+            if (listenerSettings.nowPlayingEnabled) {
+                scope.launch { runCatching { nowPlayingController.clear(packageName) } }
+            }
+            return
+        }
+
+        // The notification has left the phone, so any buttons still offered for it are dead. Saying so
+        // needs no listener: outbound calls always work, which is what makes this the one half of the
+        // problem solvable without holding a connection open.
+        //
+        // Gated on the reason. An app that *updates* a notification removes and re-posts it, and
+        // treating that as "gone" would strip the buttons off a conversation that is very much alive.
+        // Only a genuine departure counts — the user swiping it away, or it being clicked or cleared.
+        if (reason !in DEPARTURE_REASONS) return
+        val key = notification.key
+        scope.launch { runCatching { dismissedNotificationSync.onDismissed(key) } }
     }
 
     /**
@@ -324,6 +342,10 @@ class TeleNotificationListener : NotificationListenerService() {
         super.onListenerConnected()
         // Expose this connected instance for remote actions (dismiss / fire action button).
         actionGateway.attach(actionHost)
+        // Listen for presses while the screen is on — the window in which the user is actually
+        // looking at the chat, and the only way a press gets an immediate answer without a
+        // permanently-held connection.
+        screenOnPoller.attach(this, scope)
         // Seed the catalog from what's already on screen (best-effort; a listener can't enumerate
         // channels up front).
         val active = runCatching { activeNotifications }.getOrNull() ?: return
@@ -359,6 +381,7 @@ class TeleNotificationListener : NotificationListenerService() {
 
     override fun onDestroy() {
         actionGateway.detach(actionHost)
+        screenOnPoller.detach(this)
         scope.cancel()
         super.onDestroy()
     }
@@ -381,5 +404,22 @@ class TeleNotificationListener : NotificationListenerService() {
          * app, so third-party players are picked up even with an unusual category/template.
          */
         const val MEDIA_SESSION_EXTRA = "android.mediaSession"
+
+        /**
+         * Removal reasons that mean the notification is genuinely **gone**, as opposed to being
+         * replaced.
+         *
+         * Apps update a notification by removing and re-posting it, which arrives here as a removal
+         * with `REASON_APP_CANCEL`. Treating that as a departure would strip the buttons off a live
+         * conversation every time a new message arrived in it — so only a real ending counts: the user
+         * swiping it away, tapping it, or clearing the shade.
+         */
+        val DEPARTURE_REASONS = setOf(
+            REASON_CANCEL, // the user dismissed this one
+            REASON_CANCEL_ALL, // "clear all"
+            REASON_CLICK, // opened, and the app auto-cancelled it
+            REASON_LISTENER_CANCEL, // dismissed from Telegram — our own remote Dismiss
+            REASON_TIMEOUT,
+        )
     }
 }

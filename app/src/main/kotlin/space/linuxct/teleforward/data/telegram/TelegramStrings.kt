@@ -51,6 +51,7 @@ class TelegramStrings @Inject constructor(
     val dismissed: String get() = context.getString(R.string.tg_dismissed)
     val alreadyGone: String get() = context.getString(R.string.tg_resolved_already_gone)
     val playbackEnded: String get() = context.getString(R.string.tg_playback_ended)
+    val dismissedOnPhone: String get() = context.getString(R.string.tg_dismissed_on_phone)
     val linkPrefix: String get() = context.getString(R.string.tg_link_prefix)
     val noRecipientPaired: String get() = context.getString(R.string.tg_no_recipient_paired)
 

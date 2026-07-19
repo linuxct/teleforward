@@ -53,5 +53,6 @@
     <!-- Quoted so the trailing space survives: Android trims whitespace in unquoted values. -->
     <string name="tg_link_prefix">"Link: "</string>
     <string name="tg_playback_ended">⏹ Playback ended</string>
+    <string name="tg_dismissed_on_phone">✓ Dismissed on phone</string>
     <string name="tg_no_recipient_paired">no recipient paired</string>
 </resources>
