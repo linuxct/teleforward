@@ -141,6 +141,9 @@ class NotificationForensics @Inject constructor(
             isGroupConversation = style?.isGroupConversation,
             conversationTitle = style?.conversationTitle?.toString(),
             extrasKeys = runCatching { n.extras.keySet() }.getOrNull() ?: emptySet(),
+            wearableDismissalId = runCatching {
+                n.extras.getBundle(WEARABLE_EXTENSIONS_EXTRA)?.getString(DISMISSAL_ID_KEY)
+            }.getOrNull(),
         )
     }
 
@@ -411,6 +414,10 @@ class NotificationForensics @Inject constructor(
             Notification.FLAG_GROUP_SUMMARY to "GROUP_SUMMARY",
             Notification.FLAG_BUBBLE to "BUBBLE",
         )
+
+        /** The AndroidX Wear extras bundle and its dismissal-id key — a known id hiding place. */
+        const val WEARABLE_EXTENSIONS_EXTRA = "android.wearable.EXTENSIONS"
+        const val DISMISSAL_ID_KEY = "dismissalId"
 
         val EXTRA_ICON_KEYS: List<String> = listOf(
             Notification.EXTRA_LARGE_ICON,

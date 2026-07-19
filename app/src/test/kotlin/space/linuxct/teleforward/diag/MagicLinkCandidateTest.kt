@@ -65,6 +65,43 @@ class MagicLinkCandidateTest {
     }
 
     @Test
+    fun `a wearable dismissal id is surfaced and flagged`() {
+        // Telegram hides its chat + message id one bundle down, in android.wearable.EXTENSIONS —
+        // easy to miss in a raw dump, so the summary pulls it up for every app.
+        val o = MagicLinkCandidate.summarize(
+            packageName = "org.telegram.messenger",
+            alreadySupported = true,
+            tag = null,
+            shortcutId = "ndid_-1001234567890",
+            locusId = null,
+            group = "messages0",
+            isGroupConversation = true,
+            conversationTitle = "Some Group",
+            extrasKeys = setOf("android.title"),
+            wearableDismissalId = "tgchat1234567890_4567",
+        )
+        assertEquals("tgchat1234567890_4567", o.getString("wearableDismissalId"))
+        assertTrue(o.getJSONObject("signals").getBoolean("hasWearableDismissalId"))
+    }
+
+    @Test
+    fun `absent wearable dismissal id is omitted and flagged false`() {
+        val o = MagicLinkCandidate.summarize(
+            packageName = "com.example.app",
+            alreadySupported = false,
+            tag = null,
+            shortcutId = null,
+            locusId = null,
+            group = null,
+            isGroupConversation = null,
+            conversationTitle = null,
+            extrasKeys = emptySet(),
+        )
+        assertFalse(o.has("wearableDismissalId"))
+        assertFalse(o.getJSONObject("signals").getBoolean("hasWearableDismissalId"))
+    }
+
+    @Test
     fun `pure signal helpers classify shapes correctly`() {
         assertTrue(MagicLinkCandidate.looksLikeSnowflake("1238004201456406590"))
         assertFalse("too short", MagicLinkCandidate.looksLikeSnowflake("12345"))

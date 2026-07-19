@@ -53,6 +53,13 @@ object MagicLinkCandidate {
         isGroupConversation: Boolean?,
         conversationTitle: String?,
         extrasKeys: Set<String>,
+        /**
+         * The Wear `dismissalId` from the nested `android.wearable.EXTENSIONS` bundle. Worth surfacing
+         * for **every** app: it is a known hiding place for ids that appear nowhere else — it is exactly
+         * where Telegram leaks its chat + message id — and it is easy to miss in the raw dump because it
+         * sits one bundle down.
+         */
+        wearableDismissalId: String? = null,
     ): JSONObject {
         val o = JSONObject()
         o.put("package", packageName)
@@ -64,6 +71,7 @@ object MagicLinkCandidate {
         group?.let { o.put("group", it) }
         isGroupConversation?.let { o.put("isGroupConversation", it) }
         conversationTitle?.let { o.put("conversationTitle", it) }
+        wearableDismissalId?.let { o.put("wearableDismissalId", it) }
 
         val present = JSONArray()
         for (key in INTERESTING_EXTRAS_KEYS) if (key in extrasKeys) present.put(key)
@@ -78,7 +86,8 @@ object MagicLinkCandidate {
                 .put("phoneJidInTag", looksLikePhoneJid(tag))
                 .put("phoneJidInShortcut", looksLikePhoneJid(shortcutId))
                 .put("hasShortcutId", shortcutId != null)
-                .put("hasLocusId", locusId != null),
+                .put("hasLocusId", locusId != null)
+                .put("hasWearableDismissalId", wearableDismissalId != null),
         )
         return o
     }
