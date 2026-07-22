@@ -9,14 +9,14 @@ There's no server. The app *is* the bot: it keeps your bot token on the phone an
 Telegram Bot API directly. Nothing to host, no account, no third party besides Telegram.
 
 ```
-┌───────────────────────────────────────────┐
-│ WhatsApp · Messages                       │
-│ Alice                                     │
-│ Are you free tonight?                     │
-│ 21:04                                     │
-├───────────────────────────────────────────┤
+┌─────────────────────────────────────────────┐
+│ WhatsApp · Messages                         │
+│ Alice                                       │
+│ Are you free tonight?                       │
+│ 21:04                                       │
+├─────────────────────────────────────────────┤
 │ [ 💬 Reply ][ ✅ Mark read ][ 🗑 Dismiss ] │
-└───────────────────────────────────────────┘
+└─────────────────────────────────────────────┘
 ```
 
 Those buttons act on your phone, from Telegram.
